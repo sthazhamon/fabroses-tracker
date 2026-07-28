@@ -72,6 +72,36 @@
   #login-screen input{text-align:center; font-size:1.6rem; letter-spacing:6px; margin-top:10px;}
   #app{display:none;}
   #error-banner{background:#fdecec; color:#a33; border:1px solid #f3c6c6; padding:10px 14px; border-radius:8px; margin-bottom:14px; display:none; font-size:0.9rem;}
+
+  /* ---- mobile fixes: scrollable tables instead of crushed columns ---- */
+  #batch-list, #order-list, #dispatch-list, #sales-list, #purchases-list,
+  #expenses-list, #ledger-list, #users-list, #dash-content, #parties-content,
+  #catalog-list, #reseller-content {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+  #batch-list table, #order-list table, #dispatch-list table, #sales-list table,
+  #purchases-list table, #expenses-list table, #ledger-list table, #users-list table,
+  #dash-content table, #parties-content table, #reseller-content table {
+    min-width: 480px;
+  }
+  .product-grid{display:grid; grid-template-columns:repeat(auto-fill, minmax(140px,1fr)); gap:10px; margin-top:10px;}
+  .product-card{background:#fff; border:1px solid var(--line); border-radius:10px; overflow:hidden; text-align:left;}
+  .product-card img{width:100%; height:110px; object-fit:cover; display:block; background:var(--cream);}
+  .product-card .pc-body{padding:8px;}
+  .product-card .pc-name{font-weight:600; font-size:0.85rem; margin:0 0 2px;}
+  .product-card .pc-meta{font-size:0.75rem; color:#8a7278;}
+
+  @media (max-width: 420px) {
+    .row { flex-direction: column; }
+    header { flex-wrap: wrap; gap: 6px; padding: 12px 14px; }
+    header h1 { font-size: 1rem; }
+    nav button { padding: 10px 10px; font-size: 0.8rem; }
+    main { padding: 12px; }
+    .kpi-grid { grid-template-columns: 1fr 1fr; gap: 8px; }
+    .card { padding: 12px; }
+    button.primary, button.secondary { font-size: 0.9rem; }
+  }
 </style>
 </head>
 <body>
@@ -112,6 +142,32 @@
       <div id="dash-content" class="muted">Loading...</div>
     </section>
 
+    <section class="panel" id="panel-catalog">
+      <h3>Product Catalog</h3>
+      <label>Name</label>
+      <input id="pc-name" placeholder="e.g. Kanjivaram Silk Saree - Maroon">
+      <div class="row">
+        <div><label>Category</label><input id="pc-category" placeholder="Saree, Blouse, Kids wear..."></div>
+        <div><label>Color</label><input id="pc-color" placeholder="Maroon"></div>
+      </div>
+      <div class="row">
+        <div><label>Selling price (Rs)</label><input id="pc-price" type="number" step="0.01"></div>
+        <div><label>Cost (Rs)</label><input id="pc-cost" type="number" step="0.01"></div>
+      </div>
+      <label>Stock on hand (ready-made pieces)</label>
+      <input id="pc-stock" type="number" step="1" value="0">
+      <label>Description</label>
+      <textarea id="pc-desc" rows="2"></textarea>
+      <label>Photos (you can add more later)</label>
+      <input id="pc-photo" type="file" accept="image/*" capture="environment">
+      <button class="primary" onclick="createProduct()">Add to catalog</button>
+      <div id="product-result"></div>
+      <div class="card">
+        <h4 style="margin-top:0;">Catalog</h4>
+        <div id="catalog-list" class="muted">Loading...</div>
+      </div>
+    </section>
+
     <section class="panel" id="panel-batch">
       <label>Material name</label>
       <input id="b-material" placeholder="e.g. Kota Organza">
@@ -142,6 +198,22 @@
     <section class="panel" id="panel-order">
       <label>Order date</label>
       <input id="o-date" type="date">
+      <label>Due date</label>
+      <input id="o-duedate" type="date">
+      <div class="row">
+        <div>
+          <label>Priority</label>
+          <select id="o-priority"><option value="normal">Normal</option><option value="urgent">Urgent</option></select>
+        </div>
+        <div>
+          <label>Order type</label>
+          <select id="o-type" onchange="toggleCatalogField()"><option value="custom">Custom / bespoke</option><option value="catalog">From catalog stock</option></select>
+        </div>
+      </div>
+      <div id="o-catalog-wrap" style="display:none;">
+        <label>Catalog item (product code)</label>
+        <input id="o-productid" placeholder="PRD-000001">
+      </div>
       <label>Customer name</label>
       <input id="o-customer" placeholder="Customer name">
       <label>Reseller (leave blank if direct)</label>
@@ -255,6 +327,27 @@
       </div>
     </section>
 
+    <section class="panel" id="panel-parties">
+      <h3>Parties (who owes what)</h3>
+      <p class="muted">Running balances across customers, resellers, and suppliers — like the old account-head ledger, but computed automatically.</p>
+      <div id="parties-content" class="muted">Loading...</div>
+      <div class="card">
+        <h4 style="margin-top:0;">Record a payment</h4>
+        <label>Party name</label>
+        <input id="pay-party" placeholder="Must match the name used on their orders/purchases">
+        <label>Direction</label>
+        <select id="pay-direction"><option value="in">They paid us (customer/reseller)</option><option value="out">We paid them (supplier)</option></select>
+        <label>Amount (Rs)</label>
+        <input id="pay-amount" type="number" step="0.01">
+        <label>Date</label>
+        <input id="pay-date" type="date">
+        <label>Notes</label>
+        <input id="pay-notes" placeholder="e.g. UPI transfer, cash">
+        <button class="primary" onclick="submitPayment()">Record payment</button>
+        <div id="payment-msg"></div>
+      </div>
+    </section>
+
     <section class="panel" id="panel-ledger">
       <h3>Ledger &amp; Profit/Loss</h3>
       <div class="row">
@@ -310,6 +403,7 @@ const API = "/api";
 
 const TABS = [
   { id: "dashboard", label: "Dashboard", roles: ["admin","accountant"] },
+  { id: "catalog",   label: "Catalog",   roles: ["admin","accountant","worker","dispatch"] },
   { id: "batch",     label: "Raw Material", roles: ["admin","accountant","worker","dispatch"] },
   { id: "order",     label: "Work Order",   roles: ["admin","accountant","worker","dispatch"] },
   { id: "scan",      label: "Scan",         roles: ["admin","accountant","worker","dispatch"] },
@@ -317,6 +411,7 @@ const TABS = [
   { id: "sales",     label: "Sales",        roles: ["admin","accountant","dispatch"] },
   { id: "purchases", label: "Purchases",    roles: ["admin","accountant"] },
   { id: "expenses",  label: "Expenses",     roles: ["admin","accountant"] },
+  { id: "parties",   label: "Parties",      roles: ["admin","accountant"] },
   { id: "ledger",    label: "Ledger / P&L", roles: ["admin","accountant"] },
   { id: "users",     label: "Users",        roles: ["admin"] },
   { id: "reseller",  label: "My Orders",    roles: ["reseller"] },
@@ -416,12 +511,14 @@ function boot() {
 function loadTabData(tabId) {
   try {
     if (tabId === "dashboard") loadDashboard();
+    if (tabId === "catalog") loadCatalogList();
     if (tabId === "batch") loadBatchList();
     if (tabId === "order") loadOrderList();
     if (tabId === "dispatch") loadDispatchList();
     if (tabId === "sales") loadSalesList();
     if (tabId === "purchases") loadPurchasesList();
     if (tabId === "expenses") loadExpensesList();
+    if (tabId === "parties") loadPartiesContent();
     if (tabId === "ledger") loadLedgerList();
     if (tabId === "users") loadUsersList();
     if (tabId === "reseller") loadReseller();
@@ -434,8 +531,14 @@ async function loadDashboard() {
     document.getElementById("dash-content").innerHTML =
       '<div class="kpi-grid">' +
         '<div class="kpi"><div class="num">' + d.todaySales.count + '</div><div class="lbl">Sales today (Rs ' + d.todaySales.total + ')</div></div>' +
-        '<div class="kpi"><div class="num">' + d.overdueDispatch.length + '</div><div class="lbl">Overdue dispatch (Packed &gt;3 days)</div></div>' +
+        '<div class="kpi"><div class="num">' + d.overdueDispatch.length + '</div><div class="lbl">Overdue orders</div></div>' +
+        '<div class="kpi"><div class="num">Rs ' + d.outstandingSummary.customer_owed_to_us + '</div><div class="lbl">Owed to us</div></div>' +
+        '<div class="kpi"><div class="num">Rs ' + d.outstandingSummary.we_owe_suppliers + '</div><div class="lbl">We owe suppliers</div></div>' +
       '</div>' +
+      '<h4>Urgent open orders</h4>' +
+      (d.urgentOpenOrders.length ? '<table><tr><th>Code</th><th>Item</th><th>Due</th><th>Stage</th></tr>' +
+        d.urgentOpenOrders.map(function(o){ return '<tr class="warn-row"><td>' + o.id + '</td><td>' + o.description + '</td><td>' + (o.due_date||"-") + '</td><td>' + o.stage + '</td></tr>'; }).join("") + '</table>'
+        : '<p class="muted">No urgent orders open right now.</p>') +
       '<h4>Orders by stage</h4>' +
       (d.pendingByStage.map(function(s){ return '<span class="pill">' + s.stage + ': ' + s.count + '</span>'; }).join("") || '<p class="muted">No open orders.</p>') +
       '<h4>WIP by worker</h4>' +
@@ -515,9 +618,18 @@ async function loadBatchList() {
   } catch (e) { document.getElementById("batch-list").textContent = e.message; }
 }
 
+function toggleCatalogField() {
+  document.getElementById("o-catalog-wrap").style.display =
+    document.getElementById("o-type").value === "catalog" ? "block" : "none";
+}
+
 async function createOrder() {
   try {
     const date = document.getElementById("o-date").value || null;
+    const dueDate = document.getElementById("o-duedate").value || null;
+    const priority = document.getElementById("o-priority").value;
+    const orderType = document.getElementById("o-type").value;
+    const productId = document.getElementById("o-productid").value.trim().toUpperCase() || null;
     const customer = document.getElementById("o-customer").value.trim();
     const reseller = document.getElementById("o-reseller").value.trim();
     const desc = document.getElementById("o-desc").value.trim();
@@ -528,7 +640,8 @@ async function createOrder() {
 
     const worker_id = await ensureWorkerId(workerName);
     const res = await apiFetch("/workorders", { method: "POST", headers: {"Content-Type":"application/json"},
-      body: JSON.stringify({ order_date: date, customer_name: customer, reseller_name: reseller, description: desc,
+      body: JSON.stringify({ order_date: date, due_date: dueDate, priority: priority, order_type: orderType, product_id: productId,
+        customer_name: customer, reseller_name: reseller, description: desc,
         worker_id: worker_id, material_batch_id: batchCode, metres_used: metresUsed }) });
 
     document.getElementById("order-result").innerHTML =
@@ -542,10 +655,90 @@ async function createOrder() {
 async function loadOrderList() {
   try {
     const list = await apiFetch("/workorders");
-    const rows = list.slice(0, 15).map(function(o){ return '<tr><td>' + o.id + '</td><td>' + o.description + '</td><td><span class="stage-badge">' + o.stage + '</span></td><td>' + (o.worker_name||"") + '</td></tr>'; }).join("");
+    const rows = list.slice(0, 15).map(function(o){
+      const urgentTag = o.priority === "urgent" ? ' <span class="pill" style="background:#fdecec;color:#a33;">URGENT</span>' : '';
+      return '<tr><td>' + o.id + '</td><td>' + o.description + urgentTag + '</td><td><span class="stage-badge">' + o.stage + '</span></td><td>' + (o.worker_name||"") + '</td><td>' + (o.due_date||"") + '</td></tr>';
+    }).join("");
     document.getElementById("order-list").innerHTML = list.length
-      ? '<table><tr><th>Code</th><th>Description</th><th>Stage</th><th>Worker</th></tr>' + rows + '</table>' : "No orders yet.";
+      ? '<table><tr><th>Code</th><th>Description</th><th>Stage</th><th>Worker</th><th>Due</th></tr>' + rows + '</table>' : "No orders yet.";
   } catch (e) { document.getElementById("order-list").textContent = e.message; }
+}
+
+// ---------------- Catalog ----------------
+async function createProduct() {
+  try {
+    const name = document.getElementById("pc-name").value.trim();
+    const category = document.getElementById("pc-category").value.trim();
+    const color = document.getElementById("pc-color").value.trim();
+    const price = parseFloat(document.getElementById("pc-price").value) || null;
+    const cost = parseFloat(document.getElementById("pc-cost").value) || null;
+    const stock_qty = parseInt(document.getElementById("pc-stock").value) || 0;
+    const description = document.getElementById("pc-desc").value.trim();
+    const photoFile = document.getElementById("pc-photo").files[0];
+    if (!name) { alert("Name is required"); return; }
+
+    const res = await apiFetch("/products", { method: "POST", headers: {"Content-Type":"application/json"},
+      body: JSON.stringify({name: name, category: category, color: color, price: price, cost: cost, stock_qty: stock_qty, description: description}) });
+
+    if (photoFile) {
+      const fd = new FormData(); fd.append("photo", photoFile);
+      await apiFetch("/products/" + res.id + "/photo", { method: "POST", body: fd });
+    }
+    document.getElementById("product-result").innerHTML = '<p style="color:var(--ok);">Added ' + res.id + ' to catalog.</p>';
+    document.getElementById("pc-name").value = "";
+    document.getElementById("pc-category").value = "";
+    document.getElementById("pc-color").value = "";
+    document.getElementById("pc-price").value = "";
+    document.getElementById("pc-cost").value = "";
+    document.getElementById("pc-stock").value = "0";
+    document.getElementById("pc-desc").value = "";
+    loadCatalogList();
+  } catch (e) { showError(e.message); }
+}
+async function loadCatalogList() {
+  try {
+    const list = await apiFetch("/products");
+    if (!list.length) { document.getElementById("catalog-list").innerHTML = "No catalog items yet."; return; }
+    const cards = list.map(function(p){
+      const img = p.cover_photo ? '<img src="/api/photo/' + p.cover_photo + '">' : '<div style="height:110px;background:var(--cream);"></div>';
+      return '<div class="product-card">' + img +
+        '<div class="pc-body"><p class="pc-name">' + p.name + '</p>' +
+        '<p class="pc-meta">' + (p.category||"") + (p.color ? " - " + p.color : "") + '</p>' +
+        '<p class="pc-meta">Rs ' + (p.price||"-") + ' | Stock: ' + p.stock_qty + '</p>' +
+        '<p class="pc-meta" style="color:var(--rose-dark);font-weight:600;">' + p.id + '</p></div></div>';
+    }).join("");
+    document.getElementById("catalog-list").innerHTML = '<div class="product-grid">' + cards + '</div>';
+  } catch (e) { document.getElementById("catalog-list").textContent = e.message; }
+}
+
+// ---------------- Parties ----------------
+async function loadPartiesContent() {
+  try {
+    const r = await apiFetch("/reports/parties");
+    function renderGroup(title, rows) {
+      if (!rows.length) return '<h4>' + title + '</h4><p class="muted">Nothing recorded yet.</p>';
+      const body = rows.map(function(row){
+        const color = row.outstanding > 0 ? 'style="color:var(--warn);font-weight:600;"' : '';
+        return '<tr><td>' + row.party + '</td><td>Rs ' + row.billed + '</td><td>Rs ' + (row.received_or_paid_at_time + row.additional_payments) + '</td><td ' + color + '>Rs ' + row.outstanding + '</td></tr>';
+      }).join("");
+      return '<h4>' + title + '</h4><table><tr><th>Party</th><th>Billed</th><th>Settled</th><th>Outstanding</th></tr>' + body + '</table>';
+    }
+    document.getElementById("parties-content").innerHTML =
+      renderGroup("Customers", r.customers) + renderGroup("Resellers", r.resellers) + renderGroup("Suppliers (we owe them)", r.suppliers);
+  } catch (e) { document.getElementById("parties-content").textContent = e.message; }
+}
+async function submitPayment() {
+  try {
+    const party_name = document.getElementById("pay-party").value.trim();
+    const direction = document.getElementById("pay-direction").value;
+    const amount = parseFloat(document.getElementById("pay-amount").value);
+    const payment_date = document.getElementById("pay-date").value || null;
+    const notes = document.getElementById("pay-notes").value.trim();
+    const res = await apiFetch("/payments", { method: "POST", headers: {"Content-Type":"application/json"},
+      body: JSON.stringify({party_name: party_name, direction: direction, amount: amount, payment_date: payment_date, notes: notes}) });
+    document.getElementById("payment-msg").innerHTML = '<p style="color:var(--ok);">Recorded as ' + res.id + '</p>';
+    loadPartiesContent();
+  } catch (e) { showError(e.message); }
 }
 
 let html5QrCode;

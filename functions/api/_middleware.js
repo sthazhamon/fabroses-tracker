@@ -10,6 +10,7 @@ const RULES = [
   { prefix: "/api/ledger", roles: ["admin", "accountant"] },
   { prefix: "/api/expenses", roles: ["admin", "accountant"] },
   { prefix: "/api/purchases", roles: ["admin", "accountant"] },
+  { prefix: "/api/payments", roles: ["admin", "accountant"] },
   { prefix: "/api/sales", roles: ["admin", "accountant", "dispatch"] },
   { prefix: "/api/dispatch", roles: ["admin", "accountant", "dispatch"] },
   { prefix: "/api/users", roles: ["admin"] },

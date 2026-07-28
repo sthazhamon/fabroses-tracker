@@ -33,15 +33,17 @@ P&L. Runs entirely on Cloudflare's free/near-free tier.
    ```
    Copy the printed `database_id` into `wrangler.toml`.
 
-3. **Load all three schema files, in this exact order:**
+3. **Load all four schema files, in this exact order:**
    ```
    wrangler d1 execute fabroses-db --file=./schema.sql --remote
    wrangler d1 execute fabroses-db --file=./schema_v2.sql --remote
    wrangler d1 execute fabroses-db --file=./schema_v3.sql --remote
+   wrangler d1 execute fabroses-db --file=./schema_v4.sql --remote
    ```
-   `schema_v3.sql` removes the old plaintext-PIN seed login as part of the
-   migration — after this runs, there are **zero** logins in the system.
-   That's expected; the next step creates your first one.
+   `schema_v4.sql` adds the product catalog, party payments, and richer order
+   fields (due date, priority, order type). It's safe to run even on a
+   database that already has orders/sales in it — it only adds new columns
+   and tables, nothing existing gets touched.
 
 4. **Create the R2 bucket:**
    ```
@@ -52,11 +54,17 @@ P&L. Runs entirely on Cloudflare's free/near-free tier.
    ```
    node scripts/create-admin.js "Your Name" youradminusername yourSecurePin123
    ```
-   This prints a `wrangler d1 execute` command — copy it exactly and run it.
-   The script computes the password hash **locally on your machine**; your
-   PIN is never sent anywhere, only the resulting hash goes into the database.
-   You'll then sign in to the app with the username and PIN you chose here.
+   This writes a file called `create-admin.sql` in the project folder and
+   prints the command to run it:
+   ```
+   wrangler d1 execute fabroses-db --remote --file=./create-admin.sql
+   ```
+   Run that exact command. Your PIN is hashed **locally on your machine**
+   before it ever touches this file — only the scrambled hash goes into the
+   database, never the PIN itself. You can delete `create-admin.sql`
+   afterward if you like; it's not sensitive on its own, just tidy-up.
 
+   You'll then sign in to the app with the username and PIN you chose here.
    From this point on, don't use this script again for day-to-day staff —
    create those logins through the app's **Users** tab once you're signed in.
 
@@ -127,26 +135,39 @@ Sessions last 12 hours, then it asks for the PIN again.
 
 ## Day-to-day use
 
+- **Catalog** — a real product/SKU list: name, category, color, price, cost,
+  stock count, photos. This is what an order can link back to, instead of
+  every item existing only as a one-off free-text description.
 - **Raw Material** — log a fabric lot, attach a photo, get a QR code
   (`RM-000123`). Print and stick it on the roll.
-- **Work Order** — create a piece/order the same way (`WO-000045`). If you
-  enter the raw material batch it's cut from, the metres used are deducted
-  from that batch automatically.
+- **Work Order** — create a piece/order (`WO-000045`). Now supports a due
+  date, priority (normal/urgent), and an order type — either a bespoke
+  custom piece, or one fulfilled straight from catalog stock (which
+  auto-deducts one unit from that product's stock count). If you enter the
+  raw material batch it's cut from, the metres used are deducted from that
+  batch automatically.
 - **Scan** — camera scan (or type the code) to see full history and, for a
   work order, tap through the stages: Order Placed → Cutting → Handwork →
-  Stitching → Quality Check → Packed → Dispatched → Delivered. Each tap is
-  timestamped. Add a photo at any point.
+  Stitching → Quality Check → Packed → Dispatched → Delivered. Add a photo
+  at any point.
 - **Dispatch** — enter a work order code + courier + tracking ID to close it
   out. Shows up in the dispatch log.
 - **Sales** — record what sold, for how much, and how much of that's been
-  received. Auto-posts to the ledger.
-- **Purchases / Expenses** — same idea, for money going out. Also auto-post
-  to the ledger.
+  received so far.
+- **Purchases / Expenses** — money going out, same idea.
+- **Parties** — running balances for every customer, reseller, and supplier
+  you've dealt with, computed automatically from sales/purchases plus any
+  payments logged separately (so a partial payment collected later gets
+  reflected without editing the original sale). This is the closest
+  equivalent to the old spreadsheet's per-account-head Debit/Credit/Balance
+  tracking, just automatic instead of a formula you had to maintain.
 - **Ledger / P&L** — every transaction in one list, plus a profit/loss report
   you can run for any date range (leave blank for all-time).
-- **Dashboard** — orders pending by stage, WIP by worker, fabric batches
-  running low (under 5m — a hardcoded threshold for now), today's sales,
-  and orders stuck in "Packed" for more than 3 days.
+- **Dashboard** — urgent open orders, genuinely overdue orders (based on
+  actual due dates now, not just "sat in Packed too long"), orders pending
+  by stage, WIP by worker, fabric batches running low, today's sales, and
+  total outstanding both ways (what customers owe you, what you owe
+  suppliers).
 - **Users** (admin only) — create logins for staff and resellers. Each row
   also has **Revoke sessions** (instant force-logout), **Disable/Enable**
   (turn a login off without deleting it), and **Reset PIN** (if someone

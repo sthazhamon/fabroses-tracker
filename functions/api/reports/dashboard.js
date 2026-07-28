@@ -23,10 +23,28 @@ export async function onRequestGet({ env }) {
     "SELECT COALESCE(SUM(sale_price),0) AS total, COUNT(*) AS count FROM sales WHERE date(sale_date) = date('now')"
   ).first();
 
+  // Overdue now means past its actual due date, not just "sat in Packed too long" —
+  // falls back to the old Packed-stage heuristic for orders that never got a due date set.
   const overdueDispatch = await env.DB.prepare(
-    `SELECT id, description, updated_at FROM work_orders
-     WHERE stage = 'Packed' AND datetime(updated_at) < datetime('now', '-3 days')`
+    `SELECT id, description, due_date, updated_at FROM work_orders
+     WHERE stage NOT IN ('Delivered', 'Dispatched')
+       AND (
+         (due_date IS NOT NULL AND date(due_date) < date('now'))
+         OR (due_date IS NULL AND stage = 'Packed' AND datetime(updated_at) < datetime('now', '-3 days'))
+       )`
   ).all();
+
+  const urgentOpenOrders = await env.DB.prepare(
+    `SELECT id, description, due_date, stage FROM work_orders
+     WHERE priority = 'urgent' AND stage NOT IN ('Delivered', 'Dispatched')
+     ORDER BY due_date ASC`
+  ).all();
+
+  const outstandingSummary = await env.DB.prepare(
+    `SELECT
+       (SELECT COALESCE(SUM(sale_price - amount_received), 0) FROM sales) AS customer_owed_to_us,
+       (SELECT COALESCE(SUM(amount - amount_paid), 0) FROM purchases) AS we_owe_suppliers`
+  ).first();
 
   return Response.json({
     pendingByStage: pendingByStage.results,
@@ -34,5 +52,7 @@ export async function onRequestGet({ env }) {
     lowStock: lowStock.results,
     todaySales,
     overdueDispatch: overdueDispatch.results,
+    urgentOpenOrders: urgentOpenOrders.results,
+    outstandingSummary,
   });
 }

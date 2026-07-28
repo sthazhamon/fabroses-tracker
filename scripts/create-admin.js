@@ -57,12 +57,18 @@ async function main() {
   const usernameNorm = username.trim().toLowerCase();
   const resellerSql = resellerName ? `'${resellerName.replace(/'/g, "''")}'` : "NULL";
 
-  const sql = `INSERT INTO users (name, username, pin_hash, pin_salt, role, reseller_name, token_version, active) VALUES ('${name.replace(/'/g, "''")}', '${usernameNorm}', '${hash}', '${salt}', '${role}', ${resellerSql}, 1, 1);`;
+  const sql = `INSERT INTO users (name, username, pin_hash, pin_salt, role, reseller_name, token_version, active) VALUES ('${name.replace(/'/g, "''")}', '${usernameNorm}', '${hash}', '${salt}', '${role}', ${resellerSql}, 1, 1);\n`;
 
-  console.log("\nRun this command to create the login:\n");
-  console.log(`wrangler d1 execute fabroses-db --remote --command="${sql}"\n`);
+  const fs = require("node:fs");
+  const outFile = "create-admin.sql";
+  fs.writeFileSync(outFile, sql);
+
+  console.log(`\nWrote the SQL to ./${outFile}\n`);
+  console.log("Run this command to create the login:\n");
+  console.log(`wrangler d1 execute fabroses-db --remote --file=./${outFile}\n`);
   console.log(`Then sign in with username "${usernameNorm}" and the PIN you chose.`);
-  console.log("This script never sent your PIN anywhere — it only computed the hash locally.\n");
+  console.log("This script never sent your PIN anywhere — it only computed the hash locally.");
+  console.log(`You can delete ${outFile} after running the command above — it contains your PIN's hash, not the PIN itself, but no need to leave it lying around.\n`);
 }
 
 main();
