@@ -1,0 +1,849 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>FabRoses Tracker</title>
+<link rel="manifest" href="/manifest.json">
+<meta name="theme-color" content="#b5384f">
+<link rel="apple-touch-icon" href="/icons/apple-touch-icon.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="FabRoses">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+<script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+<style>
+  :root{
+    --rose:#b5384f; --rose-dark:#7d2438; --cream:#fbf4ee; --ink:#2c1f24;
+    --line:#e6d7d0; --ok:#3f7d54; --warn:#c98a2c;
+  }
+  *{box-sizing:border-box;}
+  body{margin:0; font-family:'Segoe UI',system-ui,sans-serif; background:var(--cream); color:var(--ink);}
+  header{background:var(--rose); color:#fff; padding:14px 20px; display:flex; align-items:center; justify-content:space-between;}
+  header h1{font-size:1.15rem; margin:0; font-weight:600;}
+  header .who{font-size:0.8rem; opacity:0.9;}
+  header .logout{background:none; border:1px solid rgba(255,255,255,0.6); color:#fff; border-radius:6px; padding:4px 10px; font-size:0.75rem; cursor:pointer;}
+  nav{display:flex; overflow-x:auto; background:#fff; border-bottom:1px solid var(--line); position:sticky; top:0; z-index:10;}
+  nav button{
+    flex:0 0 auto; padding:12px 14px; background:none; border:none; font-size:0.88rem; color:#8a7278;
+    border-bottom:3px solid transparent; cursor:pointer; white-space:nowrap;
+  }
+  nav button.active{color:var(--rose-dark); border-bottom-color:var(--rose); font-weight:600;}
+  main{padding:18px; max-width:600px; margin:0 auto;}
+  .panel{display:none;}
+  .panel.active{display:block;}
+  label{display:block; font-size:0.85rem; margin:14px 0 4px; color:#7a5f66; font-weight:600;}
+  input, select, textarea{
+    width:100%; padding:10px 12px; border:1px solid var(--line); border-radius:8px; font-size:1rem; background:#fff;
+  }
+  button.primary{
+    margin-top:20px; width:100%; padding:14px; background:var(--rose); color:#fff; border:none;
+    border-radius:10px; font-size:1rem; font-weight:600; cursor:pointer;
+  }
+  button.primary:active{background:var(--rose-dark);}
+  button.secondary{
+    margin-top:10px; width:100%; padding:12px; background:#fff; color:var(--rose-dark); border:1px solid var(--rose);
+    border-radius:10px; font-size:0.95rem; font-weight:600; cursor:pointer;
+  }
+  .card{background:#fff; border:1px solid var(--line); border-radius:12px; padding:16px; margin-top:16px;}
+  .qr-result{text-align:center;}
+  .qr-result #qrcode, .qr-result #qrcode2{display:inline-block; margin:14px 0;}
+  .code-big{font-size:1.4rem; font-weight:700; color:var(--rose-dark); letter-spacing:1px;}
+  .stage-badge{display:inline-block; padding:4px 10px; border-radius:20px; background:var(--rose); color:#fff; font-size:0.8rem; font-weight:600;}
+  .row{display:flex; gap:10px;}
+  .row > div{flex:1;}
+  #scanner-box{width:100%; border-radius:12px; overflow:hidden; margin-top:10px;}
+  .photo-thumb{width:64px; height:64px; object-fit:cover; border-radius:8px; margin:4px;}
+  .muted{color:#8a7278; font-size:0.85rem;}
+  .stage-btns{display:flex; flex-wrap:wrap; gap:6px; margin-top:10px;}
+  .stage-btns button{padding:8px 12px; border-radius:20px; border:1px solid var(--rose); background:#fff; color:var(--rose-dark); font-size:0.8rem; cursor:pointer;}
+  .stage-btns button.current{background:var(--rose); color:#fff;}
+  table{width:100%; border-collapse:collapse; margin-top:10px; font-size:0.85rem;}
+  th, td{text-align:left; padding:8px 6px; border-bottom:1px solid var(--line);}
+  th{color:#7a5f66; font-weight:600;}
+  .kpi-grid{display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-top:10px;}
+  .kpi{background:#fff; border:1px solid var(--line); border-radius:10px; padding:12px; text-align:center;}
+  .kpi .num{font-size:1.4rem; font-weight:700; color:var(--rose-dark);}
+  .kpi .lbl{font-size:0.75rem; color:#8a7278;}
+  .pill{display:inline-block; padding:2px 8px; border-radius:12px; background:var(--cream); font-size:0.75rem; margin:2px;}
+  .warn-row{color:var(--warn); font-weight:600;}
+  #login-screen{display:flex; align-items:center; justify-content:center; min-height:100vh; padding:20px;}
+  #login-screen .card{width:100%; max-width:320px; text-align:center;}
+  #login-screen input{text-align:center; font-size:1.6rem; letter-spacing:6px; margin-top:10px;}
+  #app{display:none;}
+  #error-banner{background:#fdecec; color:#a33; border:1px solid #f3c6c6; padding:10px 14px; border-radius:8px; margin-bottom:14px; display:none; font-size:0.9rem;}
+</style>
+</head>
+<body>
+
+<div id="login-screen">
+  <div class="card">
+    <h2 style="margin-top:0;">FabRoses Tracker</h2>
+    <p class="muted">Sign in with your username and PIN</p>
+    <label style="text-align:left;">Username</label>
+    <input id="login-username" placeholder="username" autocapitalize="off" autocorrect="off">
+    <label style="text-align:left;">PIN</label>
+    <input id="login-pin" type="password" maxlength="20" placeholder="PIN">
+    <button class="primary" onclick="doLogin()">Sign in</button>
+    <p id="login-error" class="muted" style="color:#a33;"></p>
+    <button id="install-btn" class="secondary" style="display:none;" onclick="installApp()">Install app on this phone</button>
+    <p id="ios-install-hint" class="muted" style="display:none; margin-top:10px; text-align:left;">
+      To install: tap the <b>Share</b> icon in Safari, then <b>Add to Home Screen</b>.
+    </p>
+  </div>
+</div>
+
+<div id="app">
+  <header>
+    <h1>FabRoses Tracker</h1>
+    <div>
+      <span class="who" id="who-label"></span>
+      <button class="logout" onclick="logout()">Log out</button>
+    </div>
+  </header>
+
+  <nav id="nav-bar"></nav>
+
+  <main>
+    <div id="error-banner"></div>
+
+    <section class="panel" id="panel-dashboard">
+      <h3>Dashboard</h3>
+      <div id="dash-content" class="muted">Loading...</div>
+    </section>
+
+    <section class="panel" id="panel-batch">
+      <label>Material name</label>
+      <input id="b-material" placeholder="e.g. Kota Organza">
+      <div class="row">
+        <div><label>Color</label><input id="b-color" placeholder="Turquoise blue"></div>
+        <div><label>Material code</label><input id="b-code" placeholder="FR-NK-015"></div>
+      </div>
+      <label>Supplier</label>
+      <input id="b-supplier" placeholder="Supplier name">
+      <div class="row">
+        <div><label>Metres received</label><input id="b-metres" type="number" step="0.1"></div>
+        <div><label>Purchase amount (Rs)</label><input id="b-amount" type="number" step="0.01"></div>
+      </div>
+      <label>Purchase date</label>
+      <input id="b-date" type="date">
+      <label>Notes</label>
+      <textarea id="b-notes" rows="2"></textarea>
+      <label>Photo of fabric / shade card</label>
+      <input id="b-photo" type="file" accept="image/*" capture="environment">
+      <button class="primary" onclick="createBatch()">Generate QR &amp; Save</button>
+      <div id="batch-result"></div>
+      <div class="card">
+        <h4 style="margin-top:0;">Recent batches</h4>
+        <div id="batch-list" class="muted">Loading...</div>
+      </div>
+    </section>
+
+    <section class="panel" id="panel-order">
+      <label>Order date</label>
+      <input id="o-date" type="date">
+      <label>Customer name</label>
+      <input id="o-customer" placeholder="Customer name">
+      <label>Reseller (leave blank if direct)</label>
+      <input id="o-reseller" placeholder="Reseller name">
+      <label>Description</label>
+      <textarea id="o-desc" rows="2" placeholder="Blue kota organza border saree, customisation..."></textarea>
+      <label>Assigned worker</label>
+      <input id="o-worker" placeholder="Worker name">
+      <label>Raw material batch used (scan or type code)</label>
+      <input id="o-batch" placeholder="RM-000123">
+      <label>Metres used</label>
+      <input id="o-metresused" type="number" step="0.1">
+      <button class="primary" onclick="createOrder()">Generate QR &amp; Save</button>
+      <div id="order-result"></div>
+      <div class="card">
+        <h4 style="margin-top:0;">Recent orders</h4>
+        <div id="order-list" class="muted">Loading...</div>
+      </div>
+    </section>
+
+    <section class="panel" id="panel-scan">
+      <button class="secondary" onclick="startScanner()">Start camera scan</button>
+      <div id="scanner-box"></div>
+      <label style="margin-top:16px;">Or type a code manually</label>
+      <input id="manual-code" placeholder="RM-000123 or WO-000045">
+      <button class="secondary" onclick="lookupManual()">Look up</button>
+      <div id="scan-result"></div>
+    </section>
+
+    <section class="panel" id="panel-dispatch">
+      <h3>Dispatch</h3>
+      <label>Work order code</label>
+      <input id="d-code" placeholder="WO-000045">
+      <label>Courier</label>
+      <input id="d-courier" placeholder="DTDC / Delhivery / etc.">
+      <label>Tracking ID</label>
+      <input id="d-tracking" placeholder="Tracking number">
+      <label>Dispatch date</label>
+      <input id="d-date" type="date">
+      <button class="primary" onclick="submitDispatch()">Mark dispatched</button>
+      <div id="dispatch-msg"></div>
+      <div class="card">
+        <h4 style="margin-top:0;">Dispatch log</h4>
+        <div id="dispatch-list" class="muted">Loading...</div>
+      </div>
+    </section>
+
+    <section class="panel" id="panel-sales">
+      <h3>Sales</h3>
+      <label>Work order code (optional, for custom pieces)</label>
+      <input id="s-wo" placeholder="WO-000045">
+      <label>Description</label>
+      <input id="s-desc" placeholder="Item description">
+      <label>Customer name</label>
+      <input id="s-customer" placeholder="Customer name">
+      <label>Reseller (optional)</label>
+      <input id="s-reseller" placeholder="Reseller name">
+      <div class="row">
+        <div><label>Sale price (Rs)</label><input id="s-price" type="number" step="0.01"></div>
+        <div><label>Amount received (Rs)</label><input id="s-received" type="number" step="0.01"></div>
+      </div>
+      <label>Sale date</label>
+      <input id="s-date" type="date">
+      <button class="primary" onclick="submitSale()">Record sale</button>
+      <div id="sale-msg"></div>
+      <div class="card">
+        <h4 style="margin-top:0;">Recent sales</h4>
+        <div id="sales-list" class="muted">Loading...</div>
+      </div>
+    </section>
+
+    <section class="panel" id="panel-purchases">
+      <h3>Purchases / supplier payments</h3>
+      <label>Supplier name</label>
+      <input id="p-supplier" placeholder="Supplier name">
+      <div class="row">
+        <div><label>Amount (Rs)</label><input id="p-amount" type="number" step="0.01"></div>
+        <div><label>Amount paid (Rs)</label><input id="p-paid" type="number" step="0.01"></div>
+      </div>
+      <label>Paid by</label>
+      <input id="p-paidby" placeholder="Staff name">
+      <label>Description</label>
+      <input id="p-desc" placeholder="What this purchase/payment is for">
+      <label>Date</label>
+      <input id="p-date" type="date">
+      <button class="primary" onclick="submitPurchase()">Record purchase</button>
+      <div id="purchase-msg"></div>
+      <div class="card">
+        <h4 style="margin-top:0;">Recent purchases</h4>
+        <div id="purchases-list" class="muted">Loading...</div>
+      </div>
+    </section>
+
+    <section class="panel" id="panel-expenses">
+      <h3>Expenses</h3>
+      <label>Description</label>
+      <input id="e-desc" placeholder="e.g. Electricity bill">
+      <label>Category</label>
+      <input id="e-category" placeholder="e.g. Utilities, Salary, Rent">
+      <label>Paid by</label>
+      <input id="e-paidby" placeholder="Staff name">
+      <div class="row">
+        <div><label>Amount (Rs)</label><input id="e-amount" type="number" step="0.01"></div>
+        <div><label>Date</label><input id="e-date" type="date"></div>
+      </div>
+      <button class="primary" onclick="submitExpense()">Record expense</button>
+      <div id="expense-msg"></div>
+      <div class="card">
+        <h4 style="margin-top:0;">Recent expenses</h4>
+        <div id="expenses-list" class="muted">Loading...</div>
+      </div>
+    </section>
+
+    <section class="panel" id="panel-ledger">
+      <h3>Ledger &amp; Profit/Loss</h3>
+      <div class="row">
+        <div><label>From</label><input id="pnl-from" type="date"></div>
+        <div><label>To</label><input id="pnl-to" type="date"></div>
+      </div>
+      <button class="secondary" onclick="loadPnL()">Run report</button>
+      <div id="pnl-result"></div>
+      <div class="card">
+        <h4 style="margin-top:0;">All transactions</h4>
+        <div id="ledger-list" class="muted">Loading...</div>
+      </div>
+    </section>
+
+    <section class="panel" id="panel-users">
+      <h3>Staff &amp; reseller logins</h3>
+      <label>Name</label>
+      <input id="u-name" placeholder="Full name">
+      <label>Username</label>
+      <input id="u-username" placeholder="e.g. shimi, zakir" autocapitalize="off" autocorrect="off">
+      <label>PIN (at least 6 characters)</label>
+      <input id="u-pin" placeholder="6+ characters">
+      <label>Role</label>
+      <select id="u-role" onchange="toggleResellerField()">
+        <option value="admin">Admin</option>
+        <option value="accountant">Accountant</option>
+        <option value="worker">Worker</option>
+        <option value="dispatch">Dispatch</option>
+        <option value="reseller">Reseller</option>
+      </select>
+      <div id="u-reseller-wrap" style="display:none;">
+        <label>Reseller name (must match names used on orders)</label>
+        <input id="u-resellername" placeholder="e.g. SHIMI">
+      </div>
+      <button class="primary" onclick="createUser()">Create login</button>
+      <div id="user-msg"></div>
+      <div class="card">
+        <h4 style="margin-top:0;">Existing logins</h4>
+        <div id="users-list" class="muted">Loading...</div>
+      </div>
+    </section>
+
+    <section class="panel" id="panel-reseller">
+      <h3>My orders</h3>
+      <div id="reseller-content" class="muted">Loading...</div>
+    </section>
+
+  </main>
+</div>
+
+<script>
+const API = "/api";
+
+const TABS = [
+  { id: "dashboard", label: "Dashboard", roles: ["admin","accountant"] },
+  { id: "batch",     label: "Raw Material", roles: ["admin","accountant","worker","dispatch"] },
+  { id: "order",     label: "Work Order",   roles: ["admin","accountant","worker","dispatch"] },
+  { id: "scan",      label: "Scan",         roles: ["admin","accountant","worker","dispatch"] },
+  { id: "dispatch",  label: "Dispatch",     roles: ["admin","accountant","dispatch"] },
+  { id: "sales",     label: "Sales",        roles: ["admin","accountant","dispatch"] },
+  { id: "purchases", label: "Purchases",    roles: ["admin","accountant"] },
+  { id: "expenses",  label: "Expenses",     roles: ["admin","accountant"] },
+  { id: "ledger",    label: "Ledger / P&L", roles: ["admin","accountant"] },
+  { id: "users",     label: "Users",        roles: ["admin"] },
+  { id: "reseller",  label: "My Orders",    roles: ["reseller"] },
+];
+
+function getSession() {
+  const token = localStorage.getItem("fr_token");
+  const role = localStorage.getItem("fr_role");
+  const name = localStorage.getItem("fr_name");
+  return token ? { token, role, name } : null;
+}
+
+async function apiFetch(path, opts) {
+  opts = opts || {};
+  const session = getSession();
+  const headers = Object.assign({}, opts.headers || {});
+  if (session) headers["Authorization"] = "Bearer " + session.token;
+  const res = await fetch(API + path, Object.assign({}, opts, { headers: headers }));
+  if (res.status === 401) { logout(); throw new Error("Session expired"); }
+  const json = await res.json();
+  if (!res.ok) throw new Error(json.error || "Request failed");
+  return json;
+}
+
+function showError(msg) {
+  const el = document.getElementById("error-banner");
+  el.textContent = msg;
+  el.style.display = "block";
+  setTimeout(function(){ el.style.display = "none"; }, 5000);
+}
+
+async function doLogin() {
+  const username = document.getElementById("login-username").value.trim();
+  const pin = document.getElementById("login-pin").value.trim();
+  const errEl = document.getElementById("login-error");
+  errEl.textContent = "";
+  if (!username || !pin) { errEl.textContent = "Enter both username and PIN."; return; }
+  try {
+    const res = await fetch(API + "/auth/login", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ username: username, pin: pin })
+    }).then(function(r){ return r.json(); });
+    if (res.error) { errEl.textContent = res.error; return; }
+    localStorage.setItem("fr_token", res.token);
+    localStorage.setItem("fr_role", res.role);
+    localStorage.setItem("fr_name", res.name);
+    boot();
+  } catch (e) {
+    errEl.textContent = "Could not sign in. Check your connection.";
+  }
+}
+
+function logout() {
+  localStorage.removeItem("fr_token");
+  localStorage.removeItem("fr_role");
+  localStorage.removeItem("fr_name");
+  document.getElementById("app").style.display = "none";
+  document.getElementById("login-screen").style.display = "flex";
+}
+
+function toggleResellerField() {
+  document.getElementById("u-reseller-wrap").style.display =
+    document.getElementById("u-role").value === "reseller" ? "block" : "none";
+}
+
+function switchTab(tabId) {
+  document.querySelectorAll(".tab-btn").forEach(function(b){ b.classList.toggle("active", b.dataset.tab === tabId); });
+  document.querySelectorAll(".panel").forEach(function(p){ p.classList.toggle("active", p.id === "panel-" + tabId); });
+  loadTabData(tabId);
+}
+
+function boot() {
+  const session = getSession();
+  if (!session) return;
+  document.getElementById("login-screen").style.display = "none";
+  document.getElementById("app").style.display = "block";
+  document.getElementById("who-label").textContent = session.name + " - " + session.role;
+
+  const nav = document.getElementById("nav-bar");
+  nav.innerHTML = "";
+  const visibleTabs = TABS.filter(function(t){ return t.roles.indexOf(session.role) !== -1; });
+  visibleTabs.forEach(function(t, i){
+    const btn = document.createElement("button");
+    btn.className = "tab-btn" + (i === 0 ? " active" : "");
+    btn.dataset.tab = t.id;
+    btn.textContent = t.label;
+    btn.onclick = function(){ switchTab(t.id); };
+    nav.appendChild(btn);
+  });
+  document.querySelectorAll(".panel").forEach(function(p){ p.classList.remove("active"); });
+  if (visibleTabs.length) {
+    document.getElementById("panel-" + visibleTabs[0].id).classList.add("active");
+    loadTabData(visibleTabs[0].id);
+  }
+}
+
+function loadTabData(tabId) {
+  try {
+    if (tabId === "dashboard") loadDashboard();
+    if (tabId === "batch") loadBatchList();
+    if (tabId === "order") loadOrderList();
+    if (tabId === "dispatch") loadDispatchList();
+    if (tabId === "sales") loadSalesList();
+    if (tabId === "purchases") loadPurchasesList();
+    if (tabId === "expenses") loadExpensesList();
+    if (tabId === "ledger") loadLedgerList();
+    if (tabId === "users") loadUsersList();
+    if (tabId === "reseller") loadReseller();
+  } catch (e) { showError(e.message); }
+}
+
+async function loadDashboard() {
+  try {
+    const d = await apiFetch("/reports/dashboard");
+    document.getElementById("dash-content").innerHTML =
+      '<div class="kpi-grid">' +
+        '<div class="kpi"><div class="num">' + d.todaySales.count + '</div><div class="lbl">Sales today (Rs ' + d.todaySales.total + ')</div></div>' +
+        '<div class="kpi"><div class="num">' + d.overdueDispatch.length + '</div><div class="lbl">Overdue dispatch (Packed &gt;3 days)</div></div>' +
+      '</div>' +
+      '<h4>Orders by stage</h4>' +
+      (d.pendingByStage.map(function(s){ return '<span class="pill">' + s.stage + ': ' + s.count + '</span>'; }).join("") || '<p class="muted">No open orders.</p>') +
+      '<h4>WIP by worker</h4>' +
+      (d.wipByWorker.map(function(w){ return '<span class="pill">' + w.worker + ': ' + w.count + '</span>'; }).join("") || '<p class="muted">No active work.</p>') +
+      '<h4>Low stock (raw material &lt; 5m)</h4>' +
+      (d.lowStock.length ? '<table><tr><th>Batch</th><th>Material</th><th>Balance</th></tr>' +
+        d.lowStock.map(function(b){ return '<tr class="warn-row"><td>' + b.id + '</td><td>' + (b.material_name||"") + '</td><td>' + b.metres_balance + ' m</td></tr>'; }).join("") + '</table>'
+        : '<p class="muted">All materials above threshold.</p>');
+  } catch (e) { document.getElementById("dash-content").textContent = "Could not load dashboard: " + e.message; }
+}
+
+async function ensureMaterialId(name, color, code) {
+  const list = await apiFetch("/materials");
+  const existing = list.find(function(m){ return m.name.toLowerCase() === name.toLowerCase(); });
+  if (existing) return existing.id;
+  const created = await apiFetch("/materials", { method: "POST", headers: {"Content-Type":"application/json"}, body: JSON.stringify({name: name, color: color, code: code}) });
+  return created.id;
+}
+async function ensureSupplierId(name) {
+  if (!name) return null;
+  const list = await apiFetch("/suppliers");
+  const existing = list.find(function(s){ return s.name.toLowerCase() === name.toLowerCase(); });
+  if (existing) return existing.id;
+  const created = await apiFetch("/suppliers", { method: "POST", headers: {"Content-Type":"application/json"}, body: JSON.stringify({name: name}) });
+  return created.id;
+}
+async function ensureWorkerId(name) {
+  if (!name) return null;
+  const list = await apiFetch("/workers");
+  const existing = list.find(function(w){ return w.name.toLowerCase() === name.toLowerCase(); });
+  if (existing) return existing.id;
+  const created = await apiFetch("/workers", { method: "POST", headers: {"Content-Type":"application/json"}, body: JSON.stringify({name: name}) });
+  return created.id;
+}
+function renderQR(containerId, code) {
+  const el = document.getElementById(containerId);
+  el.innerHTML = "";
+  new QRCode(el, { text: code, width: 180, height: 180 });
+}
+
+async function createBatch() {
+  try {
+    const name = document.getElementById("b-material").value.trim();
+    const color = document.getElementById("b-color").value.trim();
+    const code = document.getElementById("b-code").value.trim();
+    const supplierName = document.getElementById("b-supplier").value.trim();
+    const metres = parseFloat(document.getElementById("b-metres").value);
+    const amount = parseFloat(document.getElementById("b-amount").value) || null;
+    const date = document.getElementById("b-date").value || null;
+    const notes = document.getElementById("b-notes").value.trim();
+    const photoFile = document.getElementById("b-photo").files[0];
+    if (!name || !metres) { alert("Material name and metres received are required"); return; }
+
+    const material_id = await ensureMaterialId(name, color, code);
+    const supplier_id = await ensureSupplierId(supplierName);
+    const res = await apiFetch("/batches", { method: "POST", headers: {"Content-Type":"application/json"},
+      body: JSON.stringify({material_id: material_id, supplier_id: supplier_id, metres_received: metres, purchase_amount: amount, purchase_date: date, notes: notes}) });
+
+    if (photoFile) {
+      const fd = new FormData(); fd.append("photo", photoFile); fd.append("stage", "intake");
+      await apiFetch("/batches/" + res.id + "/photo", { method: "POST", body: fd });
+    }
+    document.getElementById("batch-result").innerHTML =
+      '<div class="card qr-result"><div class="muted">Batch created</div><div class="code-big">' + res.id + '</div>' +
+      '<div id="qrcode"></div><div class="muted">Print this label and attach it to the fabric roll.</div></div>';
+    renderQR("qrcode", res.id);
+    loadBatchList();
+  } catch (e) { showError(e.message); }
+}
+
+async function loadBatchList() {
+  try {
+    const list = await apiFetch("/batches");
+    const rows = list.slice(0, 15).map(function(b){ return '<tr><td>' + b.id + '</td><td>' + (b.material_name||"") + '</td><td>' + b.metres_balance + 'm</td><td>' + (b.supplier_name||"") + '</td></tr>'; }).join("");
+    document.getElementById("batch-list").innerHTML = list.length
+      ? '<table><tr><th>Code</th><th>Material</th><th>Balance</th><th>Supplier</th></tr>' + rows + '</table>' : "No batches yet.";
+  } catch (e) { document.getElementById("batch-list").textContent = e.message; }
+}
+
+async function createOrder() {
+  try {
+    const date = document.getElementById("o-date").value || null;
+    const customer = document.getElementById("o-customer").value.trim();
+    const reseller = document.getElementById("o-reseller").value.trim();
+    const desc = document.getElementById("o-desc").value.trim();
+    const workerName = document.getElementById("o-worker").value.trim();
+    const batchCode = document.getElementById("o-batch").value.trim().toUpperCase() || null;
+    const metresUsed = parseFloat(document.getElementById("o-metresused").value) || null;
+    if (!desc) { alert("Description is required"); return; }
+
+    const worker_id = await ensureWorkerId(workerName);
+    const res = await apiFetch("/workorders", { method: "POST", headers: {"Content-Type":"application/json"},
+      body: JSON.stringify({ order_date: date, customer_name: customer, reseller_name: reseller, description: desc,
+        worker_id: worker_id, material_batch_id: batchCode, metres_used: metresUsed }) });
+
+    document.getElementById("order-result").innerHTML =
+      '<div class="card qr-result"><div class="muted">Work order created</div><div class="code-big">' + res.id + '</div>' +
+      '<div id="qrcode2"></div><div class="muted">Print this label and attach it to the piece.</div></div>';
+    renderQR("qrcode2", res.id);
+    loadOrderList();
+  } catch (e) { showError(e.message); }
+}
+
+async function loadOrderList() {
+  try {
+    const list = await apiFetch("/workorders");
+    const rows = list.slice(0, 15).map(function(o){ return '<tr><td>' + o.id + '</td><td>' + o.description + '</td><td><span class="stage-badge">' + o.stage + '</span></td><td>' + (o.worker_name||"") + '</td></tr>'; }).join("");
+    document.getElementById("order-list").innerHTML = list.length
+      ? '<table><tr><th>Code</th><th>Description</th><th>Stage</th><th>Worker</th></tr>' + rows + '</table>' : "No orders yet.";
+  } catch (e) { document.getElementById("order-list").textContent = e.message; }
+}
+
+let html5QrCode;
+function startScanner() {
+  const box = document.getElementById("scanner-box");
+  box.innerHTML = '<div id="reader" style="width:100%"></div>';
+  html5QrCode = new Html5Qrcode("reader");
+  html5QrCode.start({ facingMode: "environment" }, { fps: 10, qrbox: 220 },
+    function(decodedText){ html5QrCode.stop(); box.innerHTML = ""; lookup(decodedText.trim().toUpperCase()); }
+  ).catch(function(err){ box.innerHTML = '<div class="muted">Camera unavailable: ' + err + '. Use manual entry below.</div>'; });
+}
+function lookupManual() {
+  const code = document.getElementById("manual-code").value.trim().toUpperCase();
+  if (code) lookup(code);
+}
+async function lookup(code) {
+  const resultDiv = document.getElementById("scan-result");
+  try {
+    const res = await apiFetch("/scan/" + code);
+    if (res.type === "batch") {
+      resultDiv.innerHTML =
+        '<div class="card"><div class="code-big">' + res.id + '</div>' +
+        '<p><b>' + (res.material_name || "") + '</b> ' + (res.color ? "- " + res.color : "") + '</p>' +
+        '<p>Supplier: ' + (res.supplier_name || "-") + '</p>' +
+        '<p>Received: ' + res.metres_received + ' m | Balance: <b>' + res.metres_balance + ' m</b></p>' +
+        '<p class="muted">' + (res.notes || "") + '</p>' +
+        photoGallery(res.photos) +
+        '<label>Add photo at this point</label>' +
+        '<input type="file" accept="image/*" capture="environment" id="scan-photo-input">' +
+        '<button class="secondary" onclick="uploadScanPhoto(\'batch\',\'' + res.id + '\')">Upload photo</button></div>';
+    }
+    if (res.type === "work_order") {
+      const stages = ["Order Placed","Cutting","Handwork","Stitching","Quality Check","Packed","Dispatched","Delivered"];
+      resultDiv.innerHTML =
+        '<div class="card"><div class="code-big">' + res.id + '</div>' +
+        '<p><b>' + res.description + '</b></p>' +
+        '<p>Customer: ' + (res.customer_name || "-") + (res.reseller_name ? " (via " + res.reseller_name + ")" : "") + '</p>' +
+        '<p>Worker: ' + (res.worker_name || "-") + '</p>' +
+        '<p>Current stage: <span class="stage-badge">' + res.stage + '</span></p>' +
+        '<div class="stage-btns">' + stages.map(function(s){ return '<button class="' + (s===res.stage?'current':'') + '" onclick="advanceStage(\'' + res.id + '\',\'' + s + '\')">' + s + '</button>'; }).join("") + '</div>' +
+        photoGallery(res.photos) +
+        '<label>Add photo at this point</label>' +
+        '<input type="file" accept="image/*" capture="environment" id="scan-photo-input">' +
+        '<button class="secondary" onclick="uploadScanPhoto(\'work_order\',\'' + res.id + '\')">Upload photo</button></div>';
+    }
+  } catch (e) {
+    resultDiv.innerHTML = '<div class="card">' + e.message + '</div>';
+  }
+}
+function photoGallery(photos) {
+  if (!photos || !photos.length) return '<p class="muted">No photos yet.</p>';
+  return '<div>' + photos.map(function(p){ return '<img class="photo-thumb" src="/api/photo/' + p.r2_key + '">'; }).join("") + '</div>';
+}
+async function advanceStage(id, stage) {
+  try {
+    await apiFetch("/workorders/" + id + "/stage", { method: "POST", headers: {"Content-Type":"application/json"}, body: JSON.stringify({ stage: stage, changed_by: getSession().name }) });
+    lookup(id);
+  } catch (e) { showError(e.message); }
+}
+async function uploadScanPhoto(entityType, id) {
+  const file = document.getElementById("scan-photo-input").files[0];
+  if (!file) { alert("Choose a photo first"); return; }
+  const fd = new FormData(); fd.append("photo", file); fd.append("stage", "scan-update");
+  const endpoint = entityType === "batch" ? "/batches/" + id + "/photo" : "/workorders/" + id + "/photo";
+  try { await apiFetch(endpoint, { method: "POST", body: fd }); lookup(id); } catch (e) { showError(e.message); }
+}
+
+async function submitDispatch() {
+  try {
+    const work_order_id = document.getElementById("d-code").value.trim().toUpperCase();
+    const courier = document.getElementById("d-courier").value.trim();
+    const tracking_id = document.getElementById("d-tracking").value.trim();
+    const dispatch_date = document.getElementById("d-date").value || null;
+    await apiFetch("/dispatch", { method: "POST", headers: {"Content-Type":"application/json"}, body: JSON.stringify({work_order_id: work_order_id, courier: courier, tracking_id: tracking_id, dispatch_date: dispatch_date}) });
+    document.getElementById("dispatch-msg").innerHTML = '<p style="color:var(--ok);">Marked ' + work_order_id + ' dispatched.</p>';
+    loadDispatchList();
+  } catch (e) { showError(e.message); }
+}
+async function loadDispatchList() {
+  try {
+    const list = await apiFetch("/dispatch");
+    const rows = list.slice(0, 15).map(function(o){ return '<tr><td>' + o.id + '</td><td>' + o.description + '</td><td>' + (o.courier||"") + '</td><td>' + (o.tracking_id||"") + '</td><td>' + (o.dispatch_date||"") + '</td></tr>'; }).join("");
+    document.getElementById("dispatch-list").innerHTML = list.length
+      ? '<table><tr><th>Code</th><th>Item</th><th>Courier</th><th>Tracking</th><th>Date</th></tr>' + rows + '</table>' : "Nothing dispatched yet.";
+  } catch (e) { document.getElementById("dispatch-list").textContent = e.message; }
+}
+
+async function submitSale() {
+  try {
+    const work_order_id = document.getElementById("s-wo").value.trim().toUpperCase() || null;
+    const description = document.getElementById("s-desc").value.trim();
+    const customer_name = document.getElementById("s-customer").value.trim();
+    const reseller_name = document.getElementById("s-reseller").value.trim();
+    const sale_price = parseFloat(document.getElementById("s-price").value);
+    const amount_received = parseFloat(document.getElementById("s-received").value) || 0;
+    const sale_date = document.getElementById("s-date").value || null;
+    const res = await apiFetch("/sales", { method: "POST", headers: {"Content-Type":"application/json"},
+      body: JSON.stringify({work_order_id: work_order_id, description: description, customer_name: customer_name, reseller_name: reseller_name, sale_price: sale_price, amount_received: amount_received, sale_date: sale_date, received_by: getSession().name}) });
+    document.getElementById("sale-msg").innerHTML = '<p style="color:var(--ok);">Recorded as ' + res.id + '</p>';
+    loadSalesList();
+  } catch (e) { showError(e.message); }
+}
+async function loadSalesList() {
+  try {
+    const list = await apiFetch("/sales");
+    const rows = list.slice(0, 15).map(function(s){ return '<tr><td>' + s.id + '</td><td>' + s.description + '</td><td>Rs ' + s.sale_price + '</td><td>' + (s.sale_date||"") + '</td></tr>'; }).join("");
+    document.getElementById("sales-list").innerHTML = list.length
+      ? '<table><tr><th>Code</th><th>Item</th><th>Price</th><th>Date</th></tr>' + rows + '</table>' : "No sales yet.";
+  } catch (e) { document.getElementById("sales-list").textContent = e.message; }
+}
+
+async function submitPurchase() {
+  try {
+    const supplier_name = document.getElementById("p-supplier").value.trim();
+    const amount = parseFloat(document.getElementById("p-amount").value);
+    const amount_paid = parseFloat(document.getElementById("p-paid").value) || 0;
+    const paid_by = document.getElementById("p-paidby").value.trim();
+    const description = document.getElementById("p-desc").value.trim();
+    const purchase_date = document.getElementById("p-date").value || null;
+    const res = await apiFetch("/purchases", { method: "POST", headers: {"Content-Type":"application/json"},
+      body: JSON.stringify({supplier_name: supplier_name, amount: amount, amount_paid: amount_paid, paid_by: paid_by, description: description, purchase_date: purchase_date}) });
+    document.getElementById("purchase-msg").innerHTML = '<p style="color:var(--ok);">Recorded as ' + res.id + '</p>';
+    loadPurchasesList();
+  } catch (e) { showError(e.message); }
+}
+async function loadPurchasesList() {
+  try {
+    const list = await apiFetch("/purchases");
+    const rows = list.slice(0, 15).map(function(p){ return '<tr><td>' + p.id + '</td><td>' + (p.supplier_name||"") + '</td><td>Rs ' + p.amount + '</td><td>' + (p.purchase_date||"") + '</td></tr>'; }).join("");
+    document.getElementById("purchases-list").innerHTML = list.length
+      ? '<table><tr><th>Code</th><th>Supplier</th><th>Amount</th><th>Date</th></tr>' + rows + '</table>' : "No purchases yet.";
+  } catch (e) { document.getElementById("purchases-list").textContent = e.message; }
+}
+
+async function submitExpense() {
+  try {
+    const description = document.getElementById("e-desc").value.trim();
+    const category = document.getElementById("e-category").value.trim();
+    const paid_by = document.getElementById("e-paidby").value.trim();
+    const amount = parseFloat(document.getElementById("e-amount").value);
+    const date = document.getElementById("e-date").value || null;
+    const res = await apiFetch("/expenses", { method: "POST", headers: {"Content-Type":"application/json"},
+      body: JSON.stringify({description: description, category: category, paid_by: paid_by, amount: amount, date: date}) });
+    document.getElementById("expense-msg").innerHTML = '<p style="color:var(--ok);">Recorded as ' + res.id + '</p>';
+    loadExpensesList();
+  } catch (e) { showError(e.message); }
+}
+async function loadExpensesList() {
+  try {
+    const list = await apiFetch("/expenses");
+    const rows = list.slice(0, 15).map(function(x){ return '<tr><td>' + x.id + '</td><td>' + x.description + '</td><td>' + (x.category||"") + '</td><td>Rs ' + x.amount + '</td><td>' + (x.date||"") + '</td></tr>'; }).join("");
+    document.getElementById("expenses-list").innerHTML = list.length
+      ? '<table><tr><th>Code</th><th>Desc</th><th>Category</th><th>Amount</th><th>Date</th></tr>' + rows + '</table>' : "No expenses yet.";
+  } catch (e) { document.getElementById("expenses-list").textContent = e.message; }
+}
+
+async function loadPnL() {
+  try {
+    const from = document.getElementById("pnl-from").value;
+    const to = document.getElementById("pnl-to").value;
+    const qs = from && to ? "?from=" + from + "&to=" + to : "";
+    const r = await apiFetch("/reports/pnl" + qs);
+    document.getElementById("pnl-result").innerHTML =
+      '<div class="card"><p>Period: ' + r.from + ' to ' + r.to + '</p>' +
+      '<div class="kpi-grid">' +
+        '<div class="kpi"><div class="num">Rs ' + r.sales.total + '</div><div class="lbl">Sales (' + r.sales.count + ')</div></div>' +
+        '<div class="kpi"><div class="num">Rs ' + r.purchases.total + '</div><div class="lbl">Purchases (' + r.purchases.count + ')</div></div>' +
+        '<div class="kpi"><div class="num">Rs ' + r.expenses.total + '</div><div class="lbl">Expenses (' + r.expenses.count + ')</div></div>' +
+        '<div class="kpi"><div class="num">Rs ' + r.profit + '</div><div class="lbl">Net profit</div></div>' +
+      '</div></div>';
+  } catch (e) { showError(e.message); }
+}
+async function loadLedgerList() {
+  try {
+    const list = await apiFetch("/ledger");
+    const rows = list.slice(0, 30).map(function(l){ return '<tr><td>' + l.date + '</td><td>' + l.type + '</td><td>' + l.reference_id + '</td><td>' + (l.party||"") + '</td><td>' + (l.direction==='credit'?'+':'-') + 'Rs ' + l.amount + '</td></tr>'; }).join("");
+    document.getElementById("ledger-list").innerHTML = list.length
+      ? '<table><tr><th>Date</th><th>Type</th><th>Ref</th><th>Party</th><th>Amount</th></tr>' + rows + '</table>' : "No transactions yet.";
+  } catch (e) { document.getElementById("ledger-list").textContent = e.message; }
+  loadPnL();
+}
+
+async function createUser() {
+  try {
+    const name = document.getElementById("u-name").value.trim();
+    const username = document.getElementById("u-username").value.trim();
+    const pin = document.getElementById("u-pin").value.trim();
+    const role = document.getElementById("u-role").value;
+    const reseller_name = document.getElementById("u-resellername").value.trim() || null;
+    await apiFetch("/users", { method: "POST", headers: {"Content-Type":"application/json"}, body: JSON.stringify({name: name, username: username, pin: pin, role: role, reseller_name: reseller_name}) });
+    document.getElementById("user-msg").innerHTML = '<p style="color:var(--ok);">Login created for ' + name + '</p>';
+    document.getElementById("u-name").value = "";
+    document.getElementById("u-username").value = "";
+    document.getElementById("u-pin").value = "";
+    loadUsersList();
+  } catch (e) { showError(e.message); }
+}
+async function loadUsersList() {
+  try {
+    const list = await apiFetch("/users");
+    const rows = list.map(function(u){
+      const statusLabel = u.active ? "Active" : "Disabled";
+      const statusColor = u.active ? "var(--ok)" : "#a33";
+      return '<tr>' +
+        '<td>' + u.name + '<br><span class="muted">@' + u.username + '</span></td>' +
+        '<td>' + u.role + (u.reseller_name ? '<br><span class="muted">' + u.reseller_name + '</span>' : '') + '</td>' +
+        '<td style="color:' + statusColor + ';">' + statusLabel + '</td>' +
+        '<td>' + (u.last_login_at || '<span class="muted">never</span>') + '</td>' +
+        '<td>' +
+          '<button class="secondary" style="margin:2px;padding:6px 8px;font-size:0.75rem;" onclick="revokeSessions(' + u.id + ')">Revoke sessions</button>' +
+          (u.active
+            ? '<button class="secondary" style="margin:2px;padding:6px 8px;font-size:0.75rem;" onclick="setUserActive(' + u.id + ',false)">Disable</button>'
+            : '<button class="secondary" style="margin:2px;padding:6px 8px;font-size:0.75rem;" onclick="setUserActive(' + u.id + ',true)">Enable</button>') +
+          '<button class="secondary" style="margin:2px;padding:6px 8px;font-size:0.75rem;" onclick="resetUserPin(' + u.id + ')">Reset PIN</button>' +
+        '</td>' +
+      '</tr>';
+    }).join("");
+    document.getElementById("users-list").innerHTML = list.length
+      ? '<table><tr><th>Name</th><th>Role</th><th>Status</th><th>Last login</th><th>Actions</th></tr>' + rows + '</table>' : "No logins yet.";
+  } catch (e) { document.getElementById("users-list").textContent = e.message; }
+}
+async function revokeSessions(id) {
+  if (!confirm("Sign this user out of all their devices immediately?")) return;
+  try {
+    await apiFetch("/users/" + id, { method: "PATCH", headers: {"Content-Type":"application/json"}, body: JSON.stringify({action:"revoke_sessions"}) });
+    document.getElementById("user-msg").innerHTML = '<p style="color:var(--ok);">Sessions revoked.</p>';
+  } catch (e) { showError(e.message); }
+}
+async function setUserActive(id, makeActive) {
+  const label = makeActive ? "enable" : "disable";
+  if (!confirm("Are you sure you want to " + label + " this login?")) return;
+  try {
+    await apiFetch("/users/" + id, { method: "PATCH", headers: {"Content-Type":"application/json"}, body: JSON.stringify({action: makeActive ? "activate" : "deactivate"}) });
+    loadUsersList();
+  } catch (e) { showError(e.message); }
+}
+async function resetUserPin(id) {
+  const newPin = prompt("Enter a new PIN (at least 6 characters):");
+  if (!newPin) return;
+  try {
+    await apiFetch("/users/" + id, { method: "PATCH", headers: {"Content-Type":"application/json"}, body: JSON.stringify({action:"reset_pin", new_pin:newPin}) });
+    document.getElementById("user-msg").innerHTML = '<p style="color:var(--ok);">PIN reset. Share the new PIN with them directly.</p>';
+  } catch (e) { showError(e.message); }
+}
+
+async function loadReseller() {
+  try {
+    const r = await apiFetch("/reseller/orders");
+    const orderRows = r.orders.map(function(o){ return '<tr><td>' + o.id + '</td><td>' + o.description + '</td><td><span class="stage-badge">' + o.stage + '</span></td><td>' + (o.tracking_id||"") + '</td></tr>'; }).join("");
+    const saleRows = r.sales.map(function(s){ return '<tr><td>' + s.id + '</td><td>' + s.description + '</td><td>Rs ' + s.sale_price + '</td><td>' + (s.sale_date||"") + '</td></tr>'; }).join("");
+    document.getElementById("reseller-content").innerHTML =
+      '<p class="muted">Showing orders linked to: <b>' + r.resellerName + '</b></p>' +
+      '<h4>Orders</h4>' +
+      (r.orders.length ? '<table><tr><th>Code</th><th>Item</th><th>Stage</th><th>Tracking</th></tr>' + orderRows + '</table>' : '<p class="muted">No orders yet.</p>') +
+      '<h4>Sales</h4>' +
+      (r.sales.length ? '<table><tr><th>Code</th><th>Item</th><th>Price</th><th>Date</th></tr>' + saleRows + '</table>' : '<p class="muted">No sales yet.</p>');
+  } catch (e) { document.getElementById("reseller-content").textContent = e.message; }
+}
+
+if (getSession()) boot();
+
+// ---------------- PWA install ----------------
+if ("serviceWorker" in navigator) {
+  window.addEventListener("load", function () {
+    navigator.serviceWorker.register("/sw.js").catch(function (e) {
+      console.warn("Service worker registration failed:", e);
+    });
+  });
+}
+
+let deferredInstallPrompt = null;
+window.addEventListener("beforeinstallprompt", function (e) {
+  e.preventDefault();
+  deferredInstallPrompt = e;
+  const btn = document.getElementById("install-btn");
+  if (btn) btn.style.display = "block";
+});
+
+function installApp() {
+  if (!deferredInstallPrompt) return;
+  deferredInstallPrompt.prompt();
+  deferredInstallPrompt.userChoice.then(function () {
+    deferredInstallPrompt = null;
+    document.getElementById("install-btn").style.display = "none";
+  });
+}
+
+// iOS (Safari) doesn't support beforeinstallprompt — show manual instructions instead,
+// but only if not already installed and not already dismissed this session.
+(function () {
+  const isIOS = /iphone|ipad|ipod/i.test(navigator.userAgent);
+  const isStandalone = window.navigator.standalone === true ||
+    window.matchMedia("(display-mode: standalone)").matches;
+  if (isIOS && !isStandalone) {
+    const hint = document.getElementById("ios-install-hint");
+    if (hint) hint.style.display = "block";
+  }
+})();
+</script>
+</body>
+</html>

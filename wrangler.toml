@@ -1,0 +1,17 @@
+name = "fabroses-tracker"
+compatibility_date = "2026-07-01"
+pages_build_output_dir = "."
+
+[[d1_databases]]
+binding = "DB"
+database_name = "fabroses-db"
+database_id = "c7f4a891-392e-492e-ac1e-a7beea40c5af"
+
+[[r2_buckets]]
+binding = "PHOTOS"
+bucket_name = "fabroses-photos"
+
+[vars]
+# Change this to a long random string before going live — it's what signs login sessions.
+# Set the real value as a secret in the Cloudflare Pages dashboard, not here (see README).
+AUTH_SECRET = "dev-secret-change-me"

@@ -1,0 +1,12 @@
+{
+  "name": "fabroses-tracker",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "wrangler pages dev . --d1=DB --r2=PHOTOS",
+    "deploy": "wrangler pages deploy ."
+  },
+  "devDependencies": {
+    "wrangler": "^4.0.0"
+  }
+}
