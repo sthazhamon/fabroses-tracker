@@ -168,6 +168,12 @@
       </div>
     </section>
 
+    <section class="panel" id="panel-floor">
+      <h3>Floor Status</h3>
+      <p class="muted">What's at the store right now, and what's currently out with each worker.</p>
+      <div id="floor-content" class="muted">Loading...</div>
+    </section>
+
     <section class="panel" id="panel-batch">
       <label>Material name</label>
       <input id="b-material" placeholder="e.g. Kota Organza">
@@ -220,10 +226,14 @@
       <input id="o-reseller" placeholder="Reseller name">
       <label>Description</label>
       <textarea id="o-desc" rows="2" placeholder="Blue kota organza border saree, customisation..."></textarea>
+      <label>Detailed work instructions</label>
+      <textarea id="o-instructions" rows="3" placeholder="Full pallu zardozi work, gold thread, peacock motif per sketch..."></textarea>
+      <label>Hand sketch / design reference photo (optional)</label>
+      <input id="o-sketch" type="file" accept="image/*" capture="environment">
       <label>Assigned worker</label>
       <input id="o-worker" placeholder="Worker name">
       <label>Raw material batch used (scan or type code)</label>
-      <input id="o-batch" placeholder="RM-000123">
+      <div class="row"><input id="o-batch" placeholder="RM-000123"><button type="button" class="secondary" style="margin-top:0;flex:0 0 90px;" onclick="openQuickScan('o-batch')">Scan</button></div>
       <label>Metres used</label>
       <input id="o-metresused" type="number" step="0.1">
       <button class="primary" onclick="createOrder()">Generate QR &amp; Save</button>
@@ -246,7 +256,7 @@
     <section class="panel" id="panel-dispatch">
       <h3>Dispatch</h3>
       <label>Work order code</label>
-      <input id="d-code" placeholder="WO-000045">
+      <div class="row"><input id="d-code" placeholder="WO-000045"><button type="button" class="secondary" style="margin-top:0;flex:0 0 90px;" onclick="openQuickScan('d-code')">Scan</button></div>
       <label>Courier</label>
       <input id="d-courier" placeholder="DTDC / Delhivery / etc.">
       <label>Tracking ID</label>
@@ -282,6 +292,29 @@
       <div class="card">
         <h4 style="margin-top:0;">Recent sales</h4>
         <div id="sales-list" class="muted">Loading...</div>
+      </div>
+    </section>
+
+    <section class="panel" id="panel-purchase-orders">
+      <h3>Purchase Orders</h3>
+      <p class="muted">Place an order with a supplier first, then receive against it — supports partial deliveries.</p>
+      <label>Supplier name</label>
+      <input id="po-supplier" placeholder="Supplier name">
+      <label>Material</label>
+      <select id="po-material"></select>
+      <div class="row">
+        <div><label>Metres ordered</label><input id="po-metres" type="number" step="0.1"></div>
+        <div><label>Rate per metre (Rs)</label><input id="po-rate" type="number" step="0.01"></div>
+      </div>
+      <label>Expected date</label>
+      <input id="po-expected" type="date">
+      <label>Notes</label>
+      <input id="po-notes" placeholder="Optional">
+      <button class="primary" onclick="createPurchaseOrder()">Place order</button>
+      <div id="po-result"></div>
+      <div class="card">
+        <h4 style="margin-top:0;">Open &amp; recent orders</h4>
+        <div id="po-list" class="muted">Loading...</div>
       </div>
     </section>
 
@@ -329,8 +362,26 @@
 
     <section class="panel" id="panel-parties">
       <h3>Parties (who owes what)</h3>
-      <p class="muted">Running balances across customers, resellers, and suppliers — like the old account-head ledger, but computed automatically.</p>
+      <p class="muted">Register any customer, reseller, supplier, or worker here — even before their first transaction. Balances update automatically from sales, purchases, and payments.</p>
+
+      <div class="card">
+        <h4 style="margin-top:0;">Add a party</h4>
+        <label>Name</label>
+        <input id="pty-name" placeholder="Must match the name you'll use on orders/purchases">
+        <label>Type</label>
+        <select id="pty-type"><option value="customer">Customer</option><option value="reseller">Reseller</option><option value="supplier">Supplier</option><option value="worker">Worker</option><option value="other">Other</option></select>
+        <label>Phone</label>
+        <input id="pty-phone" placeholder="Optional">
+        <label>Opening balance (Rs, if carried over from old records)</label>
+        <input id="pty-opening" type="number" step="0.01" value="0">
+        <label>Notes</label>
+        <input id="pty-notes" placeholder="Optional">
+        <button class="primary" onclick="createParty()">Add party</button>
+        <div id="party-msg"></div>
+      </div>
+
       <div id="parties-content" class="muted">Loading...</div>
+
       <div class="card">
         <h4 style="margin-top:0;">Record a payment</h4>
         <label>Party name</label>
@@ -404,11 +455,13 @@ const API = "/api";
 const TABS = [
   { id: "dashboard", label: "Dashboard", roles: ["admin","accountant"] },
   { id: "catalog",   label: "Catalog",   roles: ["admin","accountant","worker","dispatch"] },
+  { id: "floor",     label: "Floor Status", roles: ["admin","accountant","worker","dispatch"] },
   { id: "batch",     label: "Raw Material", roles: ["admin","accountant","worker","dispatch"] },
   { id: "order",     label: "Work Order",   roles: ["admin","accountant","worker","dispatch"] },
   { id: "scan",      label: "Scan",         roles: ["admin","accountant","worker","dispatch"] },
   { id: "dispatch",  label: "Dispatch",     roles: ["admin","accountant","dispatch"] },
   { id: "sales",     label: "Sales",        roles: ["admin","accountant","dispatch"] },
+  { id: "purchase-orders", label: "Purchase Orders", roles: ["admin","accountant","dispatch"] },
   { id: "purchases", label: "Purchases",    roles: ["admin","accountant"] },
   { id: "expenses",  label: "Expenses",     roles: ["admin","accountant"] },
   { id: "parties",   label: "Parties",      roles: ["admin","accountant"] },
@@ -512,10 +565,12 @@ function loadTabData(tabId) {
   try {
     if (tabId === "dashboard") loadDashboard();
     if (tabId === "catalog") loadCatalogList();
+    if (tabId === "floor") loadFloorStatus();
     if (tabId === "batch") loadBatchList();
     if (tabId === "order") loadOrderList();
     if (tabId === "dispatch") loadDispatchList();
     if (tabId === "sales") loadSalesList();
+    if (tabId === "purchase-orders") loadPurchaseOrdersTab();
     if (tabId === "purchases") loadPurchasesList();
     if (tabId === "expenses") loadExpensesList();
     if (tabId === "parties") loadPartiesContent();
@@ -633,6 +688,8 @@ async function createOrder() {
     const customer = document.getElementById("o-customer").value.trim();
     const reseller = document.getElementById("o-reseller").value.trim();
     const desc = document.getElementById("o-desc").value.trim();
+    const instructions = document.getElementById("o-instructions").value.trim();
+    const sketchFile = document.getElementById("o-sketch").files[0];
     const workerName = document.getElementById("o-worker").value.trim();
     const batchCode = document.getElementById("o-batch").value.trim().toUpperCase() || null;
     const metresUsed = parseFloat(document.getElementById("o-metresused").value) || null;
@@ -641,13 +698,20 @@ async function createOrder() {
     const worker_id = await ensureWorkerId(workerName);
     const res = await apiFetch("/workorders", { method: "POST", headers: {"Content-Type":"application/json"},
       body: JSON.stringify({ order_date: date, due_date: dueDate, priority: priority, order_type: orderType, product_id: productId,
-        customer_name: customer, reseller_name: reseller, description: desc,
+        customer_name: customer, reseller_name: reseller, description: desc, work_instructions: instructions,
         worker_id: worker_id, material_batch_id: batchCode, metres_used: metresUsed }) });
+
+    if (sketchFile) {
+      const fd = new FormData(); fd.append("photo", sketchFile); fd.append("stage", "design_sketch");
+      await apiFetch("/workorders/" + res.id + "/photo", { method: "POST", body: fd });
+    }
 
     document.getElementById("order-result").innerHTML =
       '<div class="card qr-result"><div class="muted">Work order created</div><div class="code-big">' + res.id + '</div>' +
       '<div id="qrcode2"></div><div class="muted">Print this label and attach it to the piece.</div></div>';
     renderQR("qrcode2", res.id);
+    document.getElementById("o-desc").value = "";
+    document.getElementById("o-instructions").value = "";
     loadOrderList();
   } catch (e) { showError(e.message); }
 }
@@ -705,27 +769,149 @@ async function loadCatalogList() {
         '<div class="pc-body"><p class="pc-name">' + p.name + '</p>' +
         '<p class="pc-meta">' + (p.category||"") + (p.color ? " - " + p.color : "") + '</p>' +
         '<p class="pc-meta">Rs ' + (p.price||"-") + ' | Stock: ' + p.stock_qty + '</p>' +
-        '<p class="pc-meta" style="color:var(--rose-dark);font-weight:600;">' + p.id + '</p></div></div>';
+        '<p class="pc-meta" style="color:var(--rose-dark);font-weight:600;">' + p.id + '</p>' +
+        '<button class="secondary" style="padding:6px 8px;font-size:0.75rem;margin-top:6px;" onclick="viewProductCost(\'' + p.id + '\')">View cost</button></div></div>';
     }).join("");
-    document.getElementById("catalog-list").innerHTML = '<div class="product-grid">' + cards + '</div>';
+    document.getElementById("catalog-list").innerHTML = '<div class="product-grid">' + cards + '</div><div id="cost-detail"></div>';
   } catch (e) { document.getElementById("catalog-list").textContent = e.message; }
 }
+async function viewProductCost(productId) {
+  try {
+    const c = await apiFetch("/products/" + productId + "/cost");
+    const rows = c.work_orders.map(function(wo){
+      const mats = wo.materials.map(function(m){ return m.material_name + ": " + m.metres_issued + "m @ Rs" + m.cost_per_metre + "/m = Rs" + m.line_cost; }).join("<br>");
+      return '<tr><td>' + wo.work_order_id + '</td><td>' + wo.received_qty + '</td><td>Rs ' + wo.raw_material_cost + '</td><td>Rs ' + wo.labor_cost + '</td><td>' + mats + '</td></tr>';
+    }).join("");
+    document.getElementById("cost-detail").innerHTML =
+      '<div class="card"><h4 style="margin-top:0;">' + c.product_name + ' — cost breakdown</h4>' +
+      '<div class="kpi-grid">' +
+        '<div class="kpi"><div class="num">Rs ' + c.cost_per_unit + '</div><div class="lbl">Cost per unit</div></div>' +
+        '<div class="kpi"><div class="num">Rs ' + (c.margin_per_unit != null ? c.margin_per_unit : "-") + '</div><div class="lbl">Margin per unit</div></div>' +
+      '</div>' +
+      '<p class="muted">Total raw material: Rs ' + c.total_raw_material_cost + ' | Total labor: Rs ' + c.total_labor_cost + ' | Units produced: ' + c.total_units_produced + '</p>' +
+      (c.work_orders.length ? '<table><tr><th>Work order</th><th>Qty</th><th>Raw cost</th><th>Labor</th><th>Materials used</th></tr>' + rows + '</table>' : '<p class="muted">No work orders have been received into this SKU yet — cost shown may be from manual entry only.</p>') +
+      '</div>';
+  } catch (e) { showError(e.message); }
+}
 
-// ---------------- Parties ----------------
+// ---------------- Purchase Orders ----------------
+async function loadPurchaseOrdersTab() {
+  await populateMaterialDropdown();
+  await loadPurchaseOrdersList();
+}
+async function populateMaterialDropdown() {
+  try {
+    const list = await apiFetch("/materials");
+    const sel = document.getElementById("po-material");
+    sel.innerHTML = list.map(function(m){ return '<option value="' + m.id + '">' + m.name + (m.color ? " (" + m.color + ")" : "") + '</option>'; }).join("") ||
+      '<option value="">Add a material first via Raw Material tab</option>';
+  } catch (e) { /* non-fatal */ }
+}
+async function createPurchaseOrder() {
+  try {
+    const supplier_name = document.getElementById("po-supplier").value.trim();
+    const material_id = parseInt(document.getElementById("po-material").value);
+    const metres_ordered = parseFloat(document.getElementById("po-metres").value);
+    const rate_per_metre = parseFloat(document.getElementById("po-rate").value) || null;
+    const expected_date = document.getElementById("po-expected").value || null;
+    const notes = document.getElementById("po-notes").value.trim();
+    if (!supplier_name || !material_id || !metres_ordered) { alert("Supplier, material, and metres ordered are required"); return; }
+    const res = await apiFetch("/purchase-orders", { method: "POST", headers: {"Content-Type":"application/json"},
+      body: JSON.stringify({supplier_name: supplier_name, material_id: material_id, metres_ordered: metres_ordered, rate_per_metre: rate_per_metre, expected_date: expected_date, notes: notes}) });
+    document.getElementById("po-result").innerHTML = '<p style="color:var(--ok);">Order placed: ' + res.id + '</p>';
+    loadPurchaseOrdersList();
+  } catch (e) { showError(e.message); }
+}
+async function loadPurchaseOrdersList() {
+  try {
+    const list = await apiFetch("/purchase-orders");
+    if (!list.length) { document.getElementById("po-list").innerHTML = "No purchase orders yet."; return; }
+    const rows = list.map(function(po){
+      const statusColor = po.status === "received" ? "var(--ok)" : (po.status === "cancelled" ? "#a33" : "var(--warn)");
+      const receiveForm = po.status !== "received" && po.status !== "cancelled"
+        ? '<div style="margin-top:6px;"><input id="po-recv-' + po.id + '" type="number" step="0.1" placeholder="Metres now" style="width:100px;display:inline-block;">' +
+          ' <input id="po-recv-amt-' + po.id + '" type="number" step="0.01" placeholder="Amount Rs" style="width:100px;display:inline-block;">' +
+          ' <button class="secondary" style="display:inline-block;width:auto;margin:0;padding:6px 10px;" onclick="receiveAgainstPO(\'' + po.id + '\')">Receive</button></div>'
+        : '';
+      return '<tr><td>' + po.id + '<br>' + (po.material_name||"") + '</td><td>' + po.supplier_name + '</td>' +
+        '<td>' + po.metres_received + ' / ' + po.metres_ordered + ' m</td>' +
+        '<td style="color:' + statusColor + ';font-weight:600;">' + po.status + '</td>' +
+        '<td>' + receiveForm + '</td></tr>';
+    }).join("");
+    document.getElementById("po-list").innerHTML = '<table><tr><th>Order</th><th>Supplier</th><th>Progress</th><th>Status</th><th>Receive</th></tr>' + rows + '</table>';
+  } catch (e) { document.getElementById("po-list").textContent = e.message; }
+}
+async function receiveAgainstPO(poId) {
+  try {
+    const metres_received = parseFloat(document.getElementById("po-recv-" + poId).value);
+    const purchase_amount = parseFloat(document.getElementById("po-recv-amt-" + poId).value) || null;
+    if (!metres_received) { alert("Enter metres received"); return; }
+    const res = await apiFetch("/purchase-orders/" + poId + "/receive", { method: "POST", headers: {"Content-Type":"application/json"},
+      body: JSON.stringify({metres_received: metres_received, purchase_amount: purchase_amount}) });
+    document.getElementById("po-result").innerHTML = '<p style="color:var(--ok);">Received as ' + res.batch_id + '. Order now: ' + res.po_status + '</p>';
+    loadPurchaseOrdersList();
+    loadBatchList();
+  } catch (e) { showError(e.message); }
+}
+async function createParty() {
+  try {
+    const name = document.getElementById("pty-name").value.trim();
+    const type = document.getElementById("pty-type").value;
+    const phone = document.getElementById("pty-phone").value.trim();
+    const opening_balance = parseFloat(document.getElementById("pty-opening").value) || 0;
+    const notes = document.getElementById("pty-notes").value.trim();
+    if (!name) { alert("Name is required"); return; }
+    const res = await apiFetch("/parties", { method: "POST", headers: {"Content-Type":"application/json"},
+      body: JSON.stringify({name: name, type: type, phone: phone, opening_balance: opening_balance, notes: notes}) });
+    document.getElementById("party-msg").innerHTML = '<p style="color:var(--ok);">Added ' + res.id + '</p>';
+    document.getElementById("pty-name").value = "";
+    document.getElementById("pty-phone").value = "";
+    document.getElementById("pty-opening").value = "0";
+    document.getElementById("pty-notes").value = "";
+    loadPartiesContent();
+  } catch (e) { showError(e.message); }
+}
 async function loadPartiesContent() {
   try {
-    const r = await apiFetch("/reports/parties");
-    function renderGroup(title, rows) {
-      if (!rows.length) return '<h4>' + title + '</h4><p class="muted">Nothing recorded yet.</p>';
-      const body = rows.map(function(row){
-        const color = row.outstanding > 0 ? 'style="color:var(--warn);font-weight:600;"' : '';
-        return '<tr><td>' + row.party + '</td><td>Rs ' + row.billed + '</td><td>Rs ' + (row.received_or_paid_at_time + row.additional_payments) + '</td><td ' + color + '>Rs ' + row.outstanding + '</td></tr>';
-      }).join("");
-      return '<h4>' + title + '</h4><table><tr><th>Party</th><th>Billed</th><th>Settled</th><th>Outstanding</th></tr>' + body + '</table>';
-    }
+    const list = await apiFetch("/parties");
+    if (!list.length) { document.getElementById("parties-content").innerHTML = '<p class="muted">No parties registered yet — add one above.</p>'; return; }
+    const rows = list.map(function(p){
+      const color = p.balance > 0 ? 'style="color:var(--warn);font-weight:600;"' : (p.balance < 0 ? 'style="color:var(--ok);font-weight:600;"' : '');
+      return '<tr><td>' + p.name + '</td><td>' + p.type + '</td><td>Rs ' + p.billed + '</td><td>Rs ' + p.settled + '</td><td ' + color + '>Rs ' + p.balance + '</td>' +
+        '<td><button class="secondary" style="width:auto;margin:0;padding:6px 8px;font-size:0.75rem;" onclick=\'editParty(' + JSON.stringify(p) + ')\'>Edit</button></td></tr>';
+    }).join("");
     document.getElementById("parties-content").innerHTML =
-      renderGroup("Customers", r.customers) + renderGroup("Resellers", r.resellers) + renderGroup("Suppliers (we owe them)", r.suppliers);
+      '<table><tr><th>Party</th><th>Type</th><th>Billed</th><th>Settled</th><th>Balance</th><th></th></tr>' + rows + '</table>' +
+      '<p class="muted">Positive balance = they owe us (customer/reseller) or we owe them (supplier). Includes opening balance.</p>';
   } catch (e) { document.getElementById("parties-content").textContent = e.message; }
+}
+async function editParty(p) {
+  const newOpening = prompt("Opening balance (Rs):", p.opening_balance);
+  if (newOpening === null) return;
+  const newPhone = prompt("Phone:", p.phone || "");
+  if (newPhone === null) return;
+  try {
+    await apiFetch("/parties/" + p.id, { method: "PATCH", headers: {"Content-Type":"application/json"},
+      body: JSON.stringify({opening_balance: parseFloat(newOpening), phone: newPhone}) });
+    loadPartiesContent();
+  } catch (e) { showError(e.message); }
+}
+
+// ---------------- Floor Status ----------------
+async function loadFloorStatus() {
+  try {
+    const d = await apiFetch("/inventory-status");
+    const storeRows = d.storeRaw.map(function(b){ return '<tr><td>' + b.id + '</td><td>' + (b.material_name||"") + '</td><td>' + b.metres_balance + ' m</td></tr>'; }).join("");
+    const workerRows = d.withWorkers.map(function(w){ return '<tr><td>' + w.worker_name + '</td><td>' + (w.material_name||"") + '</td><td>' + w.metres_issued + ' m</td><td>' + w.work_order_id + '</td></tr>'; }).join("");
+    const stockRows = d.finishedStock.map(function(p){ return '<tr><td>' + p.id + '</td><td>' + p.name + '</td><td>' + p.stock_qty + '</td></tr>'; }).join("");
+    document.getElementById("floor-content").innerHTML =
+      '<h4>At the store (raw material)</h4>' +
+      (d.storeRaw.length ? '<table><tr><th>Batch</th><th>Material</th><th>Balance</th></tr>' + storeRows + '</table>' : '<p class="muted">Nothing in stock.</p>') +
+      '<h4>Currently with workers</h4>' +
+      (d.withWorkers.length ? '<table><tr><th>Worker</th><th>Material</th><th>Metres</th><th>Work order</th></tr>' + workerRows + '</table>' : '<p class="muted">Nothing checked out right now — all material is at the store.</p>') +
+      '<h4>Finished goods stock</h4>' +
+      (d.finishedStock.length ? '<table><tr><th>Code</th><th>Name</th><th>Stock</th></tr>' + stockRows + '</table>' : '<p class="muted">No finished stock recorded yet.</p>');
+  } catch (e) { document.getElementById("floor-content").textContent = e.message; }
 }
 async function submitPayment() {
   try {
@@ -763,8 +949,10 @@ async function lookup(code) {
         '<div class="card"><div class="code-big">' + res.id + '</div>' +
         '<p><b>' + (res.material_name || "") + '</b> ' + (res.color ? "- " + res.color : "") + '</p>' +
         '<p>Supplier: ' + (res.supplier_name || "-") + '</p>' +
-        '<p>Received: ' + res.metres_received + ' m | Balance: <b>' + res.metres_balance + ' m</b></p>' +
+        '<p>Received: ' + res.metres_received + ' m | Balance available: <b>' + res.metres_balance + ' m</b></p>' +
         '<p class="muted">' + (res.notes || "") + '</p>' +
+        (res.issues && res.issues.length ? '<h4>Issue history</h4><table><tr><th>Worker</th><th>Metres</th><th>Order</th><th>Status</th></tr>' +
+          res.issues.map(function(i){ return '<tr><td>' + i.worker_name + '</td><td>' + i.metres_issued + '</td><td>' + i.work_order_id + '</td><td>' + i.status + '</td></tr>'; }).join("") + '</table>' : '') +
         photoGallery(res.photos) +
         '<label>Add photo at this point</label>' +
         '<input type="file" accept="image/*" capture="environment" id="scan-photo-input">' +
@@ -772,13 +960,49 @@ async function lookup(code) {
     }
     if (res.type === "work_order") {
       const stages = ["Order Placed","Cutting","Handwork","Stitching","Quality Check","Packed","Dispatched","Delivered"];
+      const openIssues = (res.issues || []).filter(function(i){ return i.status === "with_worker"; });
       resultDiv.innerHTML =
         '<div class="card"><div class="code-big">' + res.id + '</div>' +
         '<p><b>' + res.description + '</b></p>' +
         '<p>Customer: ' + (res.customer_name || "-") + (res.reseller_name ? " (via " + res.reseller_name + ")" : "") + '</p>' +
-        '<p>Worker: ' + (res.worker_name || "-") + '</p>' +
+        '<p>Worker: ' + (res.worker_name || "-") + (res.due_date ? " | Due: " + res.due_date : "") + (res.priority === "urgent" ? ' <span class="pill" style="background:#fdecec;color:#a33;">URGENT</span>' : '') + '</p>' +
         '<p>Current stage: <span class="stage-badge">' + res.stage + '</span></p>' +
         '<div class="stage-btns">' + stages.map(function(s){ return '<button class="' + (s===res.stage?'current':'') + '" onclick="advanceStage(\'' + res.id + '\',\'' + s + '\')">' + s + '</button>'; }).join("") + '</div>' +
+
+        '<h4>Material issued to worker</h4>' +
+        (res.issues && res.issues.length ? '<table><tr><th>Worker</th><th>Batch</th><th>Metres</th><th>Status</th></tr>' +
+          res.issues.map(function(i){ return '<tr><td>' + i.worker_name + '</td><td>' + i.material_batch_id + '</td><td>' + i.metres_issued + '</td><td>' + i.status + '</td></tr>'; }).join("") + '</table>'
+          : '<p class="muted">Nothing issued yet for this order.</p>') +
+
+        '<div class="card"><h4 style="margin-top:0;">Issue raw material to a worker</h4>' +
+        '<label>Material batch code</label><div class="row"><input id="issue-batch" placeholder="RM-000123"><button type="button" class="secondary" style="margin-top:0;flex:0 0 90px;" onclick="openQuickScan(\'issue-batch\')">Scan</button></div>' +
+        '<label>Metres</label><input id="issue-metres" type="number" step="0.1">' +
+        '<label>Worker name</label><input id="issue-worker" placeholder="' + (res.worker_name || "") + '" value="' + (res.worker_name || "") + '">' +
+        '<button class="secondary" onclick="submitIssueMaterial(\'' + res.id + '\')">Issue material</button>' +
+        '<div id="issue-msg"></div></div>' +
+
+        '<div class="card"><h4 style="margin-top:0;">Receive finished good</h4>' +
+        (res.received_qty ? '<p class="muted">Already received ' + res.received_qty + ' unit(s) on ' + res.received_at + '.</p>' : '') +
+        '<label>Existing catalog code (leave blank to create new)</label><div class="row"><input id="receive-productid" placeholder="PRD-000001"><button type="button" class="secondary" style="margin-top:0;flex:0 0 90px;" onclick="openQuickScan(\'receive-productid\')">Scan</button></div>' +
+        '<label>Or new product name</label><input id="receive-newname" placeholder="e.g. Finished blue saree">' +
+        '<div class="row"><div><label>Category</label><input id="receive-category" placeholder="Saree, Blouse..."></div><div><label>Selling price (Rs)</label><input id="receive-price" type="number" step="0.01"></div></div>' +
+        '<label>Full description (for the online store)</label><textarea id="receive-desc" rows="2" placeholder="Hand embroidered, gold thread..."></textarea>' +
+        '<div class="row"><div><label>Quantity received</label><input id="receive-qty" type="number" step="1" value="1"></div><div><label>Labor cost (Rs, optional)</label><input id="receive-labor" type="number" step="0.01"></div></div>' +
+        '<label>Photos (select multiple — downloadable for your online store)</label><input id="receive-photos" type="file" accept="image/*" multiple>' +
+        '<label>Notes</label><input id="receive-notes" placeholder="Optional">' +
+        '<button class="secondary" onclick="submitReceive(\'' + res.id + '\')">Receive finished good</button>' +
+        '<div id="receive-msg"></div></div>' +
+
+        '<div class="card"><h4 style="margin-top:0;">Edit order details</h4>' +
+        '<label>Due date</label><input id="edit-duedate" type="date" value="' + (res.due_date || "") + '">' +
+        '<label>Priority</label><select id="edit-priority"><option value="normal"' + (res.priority!=="urgent"?" selected":"") + '>Normal</option><option value="urgent"' + (res.priority==="urgent"?" selected":"") + '>Urgent</option></select>' +
+        '<label>Work instructions</label><textarea id="edit-instructions" rows="2">' + (res.work_instructions || "") + '</textarea>' +
+        '<button class="secondary" onclick="submitEditOrder(\'' + res.id + '\')">Save changes</button>' +
+        '<div id="edit-order-msg"></div></div>' +
+
+        (res.trace && res.trace.length ? '<h4>Full traceability</h4><table><tr><th>When</th><th>Event</th><th>Qty</th><th>From</th><th>To</th></tr>' +
+          res.trace.map(function(t){ return '<tr><td>' + t.created_at + '</td><td>' + t.event + '</td><td>' + (t.quantity||"") + '</td><td>' + (t.from_location||"") + '</td><td>' + (t.to_location||"") + '</td></tr>'; }).join("") + '</table>' : '') +
+
         photoGallery(res.photos) +
         '<label>Add photo at this point</label>' +
         '<input type="file" accept="image/*" capture="environment" id="scan-photo-input">' +
@@ -788,9 +1012,84 @@ async function lookup(code) {
     resultDiv.innerHTML = '<div class="card">' + e.message + '</div>';
   }
 }
+async function submitIssueMaterial(woId) {
+  try {
+    const material_batch_id = document.getElementById("issue-batch").value.trim().toUpperCase();
+    const metres = parseFloat(document.getElementById("issue-metres").value);
+    const worker_name = document.getElementById("issue-worker").value.trim();
+    if (!material_batch_id || !metres || !worker_name) { alert("Batch code, metres, and worker name are all required"); return; }
+    await apiFetch("/workorders/" + woId + "/issue-material", { method: "POST", headers: {"Content-Type":"application/json"},
+      body: JSON.stringify({material_batch_id: material_batch_id, metres: metres, worker_name: worker_name}) });
+    document.getElementById("issue-msg").innerHTML = '<p style="color:var(--ok);">Issued.</p>';
+    lookup(woId);
+  } catch (e) { showError(e.message); }
+}
+async function submitReceive(woId) {
+  try {
+    const product_id = document.getElementById("receive-productid").value.trim().toUpperCase() || null;
+    const new_product_name = document.getElementById("receive-newname").value.trim() || null;
+    const category = document.getElementById("receive-category").value.trim() || null;
+    const price = parseFloat(document.getElementById("receive-price").value) || null;
+    const description = document.getElementById("receive-desc").value.trim() || null;
+    const quantity = parseFloat(document.getElementById("receive-qty").value);
+    const labor_cost = parseFloat(document.getElementById("receive-labor").value) || null;
+    const notes = document.getElementById("receive-notes").value.trim();
+    const photoFiles = document.getElementById("receive-photos").files;
+    if (!product_id && !new_product_name) { alert("Give either an existing catalog code or a new product name"); return; }
+    if (!quantity) { alert("Quantity is required"); return; }
+
+    const result = await apiFetch("/workorders/" + woId + "/receive", { method: "POST", headers: {"Content-Type":"application/json"},
+      body: JSON.stringify({product_id: product_id, new_product_name: new_product_name, category: category, price: price,
+        description: description, quantity: quantity, labor_cost: labor_cost, notes: notes}) });
+
+    for (let i = 0; i < photoFiles.length; i++) {
+      const fd = new FormData(); fd.append("photo", photoFiles[i]);
+      await apiFetch("/products/" + result.product_id + "/photo", { method: "POST", body: fd });
+    }
+
+    document.getElementById("receive-msg").innerHTML = '<p style="color:var(--ok);">Received into ' + result.product_id + '.</p>';
+    lookup(woId);
+  } catch (e) { showError(e.message); }
+}
+async function submitEditOrder(woId) {
+  try {
+    const due_date = document.getElementById("edit-duedate").value || null;
+    const priority = document.getElementById("edit-priority").value;
+    const work_instructions = document.getElementById("edit-instructions").value.trim();
+    await apiFetch("/workorders/" + woId, { method: "PATCH", headers: {"Content-Type":"application/json"},
+      body: JSON.stringify({due_date: due_date, priority: priority, work_instructions: work_instructions}) });
+    document.getElementById("edit-order-msg").innerHTML = '<p style="color:var(--ok);">Saved.</p>';
+    lookup(woId);
+  } catch (e) { showError(e.message); }
+}
+
+// ---------------- Quick scan-to-fill (reusable for any text input) ----------------
+let quickScanInstance = null;
+function openQuickScan(targetInputId) {
+  const overlay = document.createElement("div");
+  overlay.id = "quickscan-overlay";
+  overlay.style.cssText = "position:fixed;inset:0;background:rgba(20,10,12,0.92);z-index:999;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:20px;";
+  overlay.innerHTML = '<div id="quickscan-reader" style="width:100%;max-width:340px;"></div>' +
+    '<button class="secondary" style="margin-top:14px;max-width:200px;background:#fff;" onclick="closeQuickScan()">Cancel</button>';
+  document.body.appendChild(overlay);
+  quickScanInstance = new Html5Qrcode("quickscan-reader");
+  quickScanInstance.start({ facingMode: "environment" }, { fps: 10, qrbox: 220 },
+    function (decodedText) {
+      document.getElementById(targetInputId).value = decodedText.trim().toUpperCase();
+      closeQuickScan();
+    }
+  ).catch(function (err) {
+    document.getElementById("quickscan-reader").innerHTML = '<p style="color:#fff;">Camera unavailable: ' + err + '</p>';
+  });
+}
+function closeQuickScan() {
+  if (quickScanInstance) { quickScanInstance.stop().catch(function(){}); quickScanInstance = null; }
+  const el = document.getElementById("quickscan-overlay");
+  if (el) el.remove();
+}
 function photoGallery(photos) {
   if (!photos || !photos.length) return '<p class="muted">No photos yet.</p>';
-  return '<div>' + photos.map(function(p){ return '<img class="photo-thumb" src="/api/photo/' + p.r2_key + '">'; }).join("") + '</div>';
+  return '<div>' + photos.map(function(p){ return '<a href="/api/photo/' + p.r2_key + '" download target="_blank"><img class="photo-thumb" src="/api/photo/' + p.r2_key + '"></a>'; }).join("") + '</div>';
 }
 async function advanceStage(id, stage) {
   try {
@@ -844,10 +1143,52 @@ async function submitSale() {
 async function loadSalesList() {
   try {
     const list = await apiFetch("/sales");
-    const rows = list.slice(0, 15).map(function(s){ return '<tr><td>' + s.id + '</td><td>' + s.description + '</td><td>Rs ' + s.sale_price + '</td><td>' + (s.sale_date||"") + '</td></tr>'; }).join("");
+    const rows = list.slice(0, 15).map(function(s){ return '<tr><td>' + s.id + '</td><td>' + s.description + '</td><td>Rs ' + s.sale_price + '</td><td>' + (s.sale_date||"") + '</td>' +
+      '<td><button class="secondary" style="width:auto;margin:2px;padding:6px 8px;font-size:0.75rem;" onclick=\'editSale(' + JSON.stringify(s) + ')\'>Edit</button>' +
+      '<button class="secondary" style="width:auto;margin:2px;padding:6px 8px;font-size:0.75rem;" onclick=\'printInvoice(' + JSON.stringify(s) + ')\'>Print</button></td></tr>'; }).join("");
     document.getElementById("sales-list").innerHTML = list.length
-      ? '<table><tr><th>Code</th><th>Item</th><th>Price</th><th>Date</th></tr>' + rows + '</table>' : "No sales yet.";
+      ? '<table><tr><th>Code</th><th>Item</th><th>Price</th><th>Date</th><th>Actions</th></tr>' + rows + '</table>' : "No sales yet.";
   } catch (e) { document.getElementById("sales-list").textContent = e.message; }
+}
+async function editSale(sale) {
+  const newPrice = prompt("Sale price (Rs):", sale.sale_price);
+  if (newPrice === null) return;
+  const newReceived = prompt("Amount received so far (Rs):", sale.amount_received);
+  if (newReceived === null) return;
+  const newDesc = prompt("Description:", sale.description);
+  if (newDesc === null) return;
+  try {
+    await apiFetch("/sales/" + sale.id, { method: "PATCH", headers: {"Content-Type":"application/json"},
+      body: JSON.stringify({sale_price: parseFloat(newPrice), amount_received: parseFloat(newReceived), description: newDesc}) });
+    loadSalesList();
+  } catch (e) { showError(e.message); }
+}
+function printInvoice(sale) {
+  const session = getSession();
+  const win = window.open("", "_blank");
+  win.document.write(
+    '<html><head><title>Invoice ' + sale.id + '</title><style>' +
+    'body{font-family:Georgia,serif;max-width:600px;margin:40px auto;color:#2c1f24;}' +
+    'h1{color:#b5384f;border-bottom:2px solid #b5384f;padding-bottom:10px;}' +
+    'table{width:100%;border-collapse:collapse;margin-top:20px;}' +
+    'td,th{padding:10px;border-bottom:1px solid #ddd;text-align:left;}' +
+    '.total{font-size:1.3rem;font-weight:bold;text-align:right;margin-top:20px;}' +
+    '.muted{color:#888;font-size:0.9rem;}' +
+    '</style></head><body>' +
+    '<h1>FabRoses</h1>' +
+    '<p class="muted">Invoice ' + sale.id + ' &middot; ' + (sale.sale_date || "") + '</p>' +
+    '<table>' +
+    '<tr><th>Bill to</th><td>' + (sale.customer_name || sale.reseller_name || "Walk-in customer") + '</td></tr>' +
+    '<tr><th>Item</th><td>' + sale.description + '</td></tr>' +
+    '<tr><th>Amount</th><td>Rs ' + sale.sale_price + '</td></tr>' +
+    '<tr><th>Received</th><td>Rs ' + (sale.amount_received || 0) + '</td></tr>' +
+    '<tr><th>Balance due</th><td>Rs ' + (sale.sale_price - (sale.amount_received || 0)) + '</td></tr>' +
+    '</table>' +
+    '<p class="total">Total: Rs ' + sale.sale_price + '</p>' +
+    '<script>window.print();<' + '/script>' +
+    '</body></html>'
+  );
+  win.document.close();
 }
 
 async function submitPurchase() {
@@ -867,10 +1208,22 @@ async function submitPurchase() {
 async function loadPurchasesList() {
   try {
     const list = await apiFetch("/purchases");
-    const rows = list.slice(0, 15).map(function(p){ return '<tr><td>' + p.id + '</td><td>' + (p.supplier_name||"") + '</td><td>Rs ' + p.amount + '</td><td>' + (p.purchase_date||"") + '</td></tr>'; }).join("");
+    const rows = list.slice(0, 15).map(function(p){ return '<tr><td>' + p.id + '</td><td>' + (p.supplier_name||"") + '</td><td>Rs ' + p.amount + '</td><td>' + (p.purchase_date||"") + '</td>' +
+      '<td><button class="secondary" style="width:auto;margin:0;padding:6px 8px;font-size:0.75rem;" onclick=\'editPurchase(' + JSON.stringify(p) + ')\'>Edit</button></td></tr>'; }).join("");
     document.getElementById("purchases-list").innerHTML = list.length
-      ? '<table><tr><th>Code</th><th>Supplier</th><th>Amount</th><th>Date</th></tr>' + rows + '</table>' : "No purchases yet.";
+      ? '<table><tr><th>Code</th><th>Supplier</th><th>Amount</th><th>Date</th><th></th></tr>' + rows + '</table>' : "No purchases yet.";
   } catch (e) { document.getElementById("purchases-list").textContent = e.message; }
+}
+async function editPurchase(p) {
+  const newAmount = prompt("Amount (Rs):", p.amount);
+  if (newAmount === null) return;
+  const newPaid = prompt("Amount paid so far (Rs):", p.amount_paid);
+  if (newPaid === null) return;
+  try {
+    await apiFetch("/purchases/" + p.id, { method: "PATCH", headers: {"Content-Type":"application/json"},
+      body: JSON.stringify({amount: parseFloat(newAmount), amount_paid: parseFloat(newPaid)}) });
+    loadPurchasesList();
+  } catch (e) { showError(e.message); }
 }
 
 async function submitExpense() {
@@ -889,10 +1242,22 @@ async function submitExpense() {
 async function loadExpensesList() {
   try {
     const list = await apiFetch("/expenses");
-    const rows = list.slice(0, 15).map(function(x){ return '<tr><td>' + x.id + '</td><td>' + x.description + '</td><td>' + (x.category||"") + '</td><td>Rs ' + x.amount + '</td><td>' + (x.date||"") + '</td></tr>'; }).join("");
+    const rows = list.slice(0, 15).map(function(x){ return '<tr><td>' + x.id + '</td><td>' + x.description + '</td><td>' + (x.category||"") + '</td><td>Rs ' + x.amount + '</td><td>' + (x.date||"") + '</td>' +
+      '<td><button class="secondary" style="width:auto;margin:0;padding:6px 8px;font-size:0.75rem;" onclick=\'editExpense(' + JSON.stringify(x) + ')\'>Edit</button></td></tr>'; }).join("");
     document.getElementById("expenses-list").innerHTML = list.length
-      ? '<table><tr><th>Code</th><th>Desc</th><th>Category</th><th>Amount</th><th>Date</th></tr>' + rows + '</table>' : "No expenses yet.";
+      ? '<table><tr><th>Code</th><th>Desc</th><th>Category</th><th>Amount</th><th>Date</th><th></th></tr>' + rows + '</table>' : "No expenses yet.";
   } catch (e) { document.getElementById("expenses-list").textContent = e.message; }
+}
+async function editExpense(x) {
+  const newAmount = prompt("Amount (Rs):", x.amount);
+  if (newAmount === null) return;
+  const newDesc = prompt("Description:", x.description);
+  if (newDesc === null) return;
+  try {
+    await apiFetch("/expenses/" + x.id, { method: "PATCH", headers: {"Content-Type":"application/json"},
+      body: JSON.stringify({amount: parseFloat(newAmount), description: newDesc}) });
+    loadExpensesList();
+  } catch (e) { showError(e.message); }
 }
 
 async function loadPnL() {

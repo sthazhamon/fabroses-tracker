@@ -16,7 +16,11 @@ export async function onRequestGet({ params, env }) {
       "SELECT * FROM photos WHERE entity_type = 'batch' AND entity_id = ? ORDER BY uploaded_at DESC"
     ).bind(code).all();
 
-    return Response.json({ type: "batch", ...batch, photos });
+    const { results: issues } = await env.DB.prepare(
+      "SELECT * FROM material_issues WHERE material_batch_id = ? ORDER BY issued_at DESC"
+    ).bind(code).all();
+
+    return Response.json({ type: "batch", ...batch, photos, issues });
   }
 
   if (code.startsWith("WO-")) {
@@ -37,7 +41,15 @@ export async function onRequestGet({ params, env }) {
       "SELECT * FROM photos WHERE entity_type = 'work_order' AND entity_id = ? ORDER BY uploaded_at DESC"
     ).bind(code).all();
 
-    return Response.json({ type: "work_order", ...order, stages, photos });
+    const { results: issues } = await env.DB.prepare(
+      "SELECT * FROM material_issues WHERE work_order_id = ? ORDER BY issued_at ASC"
+    ).bind(code).all();
+
+    const { results: trace } = await env.DB.prepare(
+      "SELECT * FROM inventory_log WHERE work_order_id = ? ORDER BY created_at ASC"
+    ).bind(code).all();
+
+    return Response.json({ type: "work_order", ...order, stages, photos, issues, trace });
   }
 
   return Response.json({ error: "unrecognized code format" }, { status: 400 });

@@ -31,5 +31,10 @@ export async function onRequestPost({ request, env }) {
     metres_received, purchase_amount || null, purchase_date || null, notes || null
   ).run();
 
+  await env.DB.prepare(
+    `INSERT INTO inventory_log (item_type, item_ref, event, quantity, from_location, to_location, notes)
+     VALUES ('raw_material', ?, 'received_into_store', ?, 'Supplier', 'Store', ?)`
+  ).bind(id, metres_received, notes || null).run();
+
   return Response.json({ id });
 }

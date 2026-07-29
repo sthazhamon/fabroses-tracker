@@ -33,17 +33,19 @@ P&L. Runs entirely on Cloudflare's free/near-free tier.
    ```
    Copy the printed `database_id` into `wrangler.toml`.
 
-3. **Load all four schema files, in this exact order:**
+3. **Load all six schema files, in this exact order:**
    ```
    wrangler d1 execute fabroses-db --file=./schema.sql --remote
    wrangler d1 execute fabroses-db --file=./schema_v2.sql --remote
    wrangler d1 execute fabroses-db --file=./schema_v3.sql --remote
    wrangler d1 execute fabroses-db --file=./schema_v4.sql --remote
+   wrangler d1 execute fabroses-db --file=./schema_v5.sql --remote
+   wrangler d1 execute fabroses-db --file=./schema_v6.sql --remote
    ```
-   `schema_v4.sql` adds the product catalog, party payments, and richer order
-   fields (due date, priority, order type). It's safe to run even on a
-   database that already has orders/sales in it — it only adds new columns
-   and tables, nothing existing gets touched.
+   `schema_v5.sql` adds the party master, the issue-to-worker /
+   receive-finished-good job-work workflow, and the traceability log.
+   `schema_v6.sql` adds purchase orders, the edit audit log, and richer work
+   order fields. Safe to run on a database that already has data.
 
 4. **Create the R2 bucket:**
    ```
@@ -135,43 +137,70 @@ Sessions last 12 hours, then it asks for the PIN again.
 
 ## Day-to-day use
 
-- **Catalog** — a real product/SKU list: name, category, color, price, cost,
-  stock count, photos. This is what an order can link back to, instead of
-  every item existing only as a one-off free-text description.
-- **Raw Material** — log a fabric lot, attach a photo, get a QR code
-  (`RM-000123`). Print and stick it on the roll.
-- **Work Order** — create a piece/order (`WO-000045`). Now supports a due
-  date, priority (normal/urgent), and an order type — either a bespoke
-  custom piece, or one fulfilled straight from catalog stock (which
-  auto-deducts one unit from that product's stock count). If you enter the
-  raw material batch it's cut from, the metres used are deducted from that
-  batch automatically.
-- **Scan** — camera scan (or type the code) to see full history and, for a
-  work order, tap through the stages: Order Placed → Cutting → Handwork →
-  Stitching → Quality Check → Packed → Dispatched → Delivered. Add a photo
-  at any point.
-- **Dispatch** — enter a work order code + courier + tracking ID to close it
-  out. Shows up in the dispatch log.
-- **Sales** — record what sold, for how much, and how much of that's been
-  received so far.
-- **Purchases / Expenses** — money going out, same idea.
-- **Parties** — running balances for every customer, reseller, and supplier
-  you've dealt with, computed automatically from sales/purchases plus any
-  payments logged separately (so a partial payment collected later gets
-  reflected without editing the original sale). This is the closest
-  equivalent to the old spreadsheet's per-account-head Debit/Credit/Balance
-  tracking, just automatic instead of a formula you had to maintain.
-- **Ledger / P&L** — every transaction in one list, plus a profit/loss report
-  you can run for any date range (leave blank for all-time).
-- **Dashboard** — urgent open orders, genuinely overdue orders (based on
-  actual due dates now, not just "sat in Packed too long"), orders pending
-  by stage, WIP by worker, fabric batches running low, today's sales, and
-  total outstanding both ways (what customers owe you, what you owe
-  suppliers).
-- **Users** (admin only) — create logins for staff and resellers. Each row
-  also has **Revoke sessions** (instant force-logout), **Disable/Enable**
-  (turn a login off without deleting it), and **Reset PIN** (if someone
-  forgets theirs).
+- **Purchase Orders** — place an order with a supplier, then receive against
+  it (partial deliveries supported). This is the "ordering materials, then
+  receiving against the order" half of procurement, separate from job-work.
+- **Catalog** — a real product/SKU list with photos. Each item has a **View
+  cost** button showing exactly which raw material batches and how much
+  labor went into it, and the resulting margin.
+- **Floor Status** — what's at the store, what's with each worker.
+- **Raw Material** — log a fabric lot directly, or receive it via a Purchase
+  Order (recommended, since it keeps the order-to-receipt link intact).
+- **Work Order** — now has a dedicated **work instructions** field for
+  detailed briefs, and an optional **hand-sketch photo** attached right at
+  creation. One order can draw material from multiple different batches, and
+  the same batch can feed multiple different orders — both fully supported
+  and traceable.
+- **Scan** — the job-work control center:
+  - **Issue material to a worker** (scan-to-fill the batch code instead of
+    typing it)
+  - **Receive the finished good** with a real description, price, category,
+    and multiple photos — this is what becomes the catalog listing, photos
+    included, ready to download for your online store
+  - **Edit order details** — due date, priority, and instructions can be
+    corrected after creation
+  - Full traceability and stage progression, as before
+- **Dispatch / Sales / Purchases / Expenses** — each list now has an **Edit**
+  button. Editing a sale, purchase, or expense updates the underlying ledger
+  entry too, and every change is recorded in an audit log (old value, new
+  value, who made the change) — nothing is silently overwritten.
+- **Sales** also has a **Print** button — opens a clean, print-ready invoice
+  in a new tab (use your browser's Print → Save as PDF for a digital copy).
+- **Parties** — add a party directly, with an opening balance; edit their
+  details later if needed.
+- **Ledger / P&L**, **Dashboard**, **Users** — as before.
+
+## Two things worth understanding about how costing works
+
+- **Cost per SKU** is computed by tracing every work order that fed into
+  that product, and for each one, exactly how many metres of which batch(es)
+  it used — a batch's cost is spread across every order that drew from it,
+  not double-counted. Labor cost is whatever you typed in at the moment of
+  receiving (there's no automatic piece-rate calculation).
+- **A SKU created by typing a brand-new name at receiving time** starts a
+  fresh cost trail from that point on. If you receive a second batch of the
+  same design into the *same* existing catalog code later, its cost rolls
+  into the same average.
+
+## Testing this yourself before you trust it with real data
+
+The `test/` folder has real system test suites — they import the actual
+`functions/api/*.js` files (the same code that gets deployed) and run them
+against a real SQLite database and a fake photo bucket, no live Cloudflare
+account needed. Run all three any time you or I change the code:
+
+```
+node test/system-test.mjs
+node test/system-test-part2.mjs
+node test/system-test-part3.mjs
+```
+
+Together they're 111 checks covering the full job-work cycle, purchase
+orders, editing records with audit trail, the two explicit corner cases
+(one order fed by multiple material batches, one batch feeding multiple
+orders), per-SKU cost roll-up math, every endpoint's happy path and its
+error cases, login lockout, and live session revocation. If any of them
+ever print a FAIL line, don't deploy that change until it's resolved.
 
 ## Installing it as an app on a phone
 

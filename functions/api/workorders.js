@@ -12,7 +12,7 @@ export async function onRequestGet({ env }) {
 export async function onRequestPost({ request, env }) {
   const body = await request.json();
   const {
-    order_date, customer_name, reseller_name, description,
+    order_date, customer_name, reseller_name, description, work_instructions,
     worker_id, material_batch_id, metres_used,
     due_date, priority, order_type, product_id,
   } = body;
@@ -27,12 +27,12 @@ export async function onRequestPost({ request, env }) {
 
   await env.DB.prepare(
     `INSERT INTO work_orders
-     (id, order_date, customer_name, reseller_name, description, worker_id, material_batch_id, metres_used,
+     (id, order_date, customer_name, reseller_name, description, work_instructions, worker_id, material_batch_id, metres_used,
       due_date, priority, order_type, product_id, stage)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'Order Placed')`
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'Order Placed')`
   ).bind(
     id, order_date || null, customer_name || null, reseller_name || null,
-    description, worker_id || null, material_batch_id || null, metres_used || null,
+    description, work_instructions || null, worker_id || null, material_batch_id || null, metres_used || null,
     due_date || null, priority || "normal", order_type || "custom", product_id || null
   ).run();
 
