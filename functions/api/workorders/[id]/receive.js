@@ -47,5 +47,11 @@ export async function onRequestPost({ request, env, params, data }) {
      VALUES ('finished_good', ?, ?, ?, ?, ?, 'Store', ?, ?)`
   ).bind(finalProductId, params.id, "returned_finished_good", quantity, order.worker_name || "worker", notes || null, data.user?.name || "system").run();
 
+  // Close the loop for any customer order that was waiting on exactly this
+  // work order — the stock just landed, so it's ready to bill and ship.
+  await env.DB.prepare(
+    "UPDATE customer_orders SET status = 'ready_to_bill', updated_at = datetime('now') WHERE linked_work_order_id = ? AND status IN ('awaiting_material', 'awaiting_wip')"
+  ).bind(params.id).run();
+
   return Response.json({ ok: true, product_id: finalProductId });
 }

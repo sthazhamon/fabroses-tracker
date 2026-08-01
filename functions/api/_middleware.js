@@ -15,6 +15,7 @@ const RULES = [
   { prefix: "/api/sales", roles: ["admin", "accountant", "dispatch"] },
   { prefix: "/api/dispatch", roles: ["admin", "accountant", "dispatch"] },
   { prefix: "/api/purchase-orders", roles: ["admin", "accountant", "dispatch"] },
+  { prefix: "/api/customer-orders", roles: ["admin", "accountant", "dispatch"] },
   { prefix: "/api/users", roles: ["admin"] },
   // everything else (materials, suppliers, workers, batches, workorders, scan) —
   // any signed-in staff member except reseller

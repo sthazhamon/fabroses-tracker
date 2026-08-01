@@ -15,7 +15,7 @@ function assert(condition, label) {
 function section(title) { console.log(`\n${title}`); }
 
 const sqliteDb = new DatabaseSync(":memory:");
-for (const f of ["schema.sql", "schema_v2.sql", "schema_v3.sql", "schema_v4.sql", "schema_v5.sql", "schema_v6.sql"]) {
+for (const f of ["schema.sql", "schema_v2.sql", "schema_v3.sql", "schema_v4.sql", "schema_v5.sql", "schema_v6.sql", "schema_v7.sql", "schema_v8.sql"]) {
   sqliteDb.exec(readFileSync(new URL(`../${f}`, import.meta.url), "utf8"));
 }
 const env = { DB: wrapD1(sqliteDb), PHOTOS: makeFakeR2(), AUTH_SECRET: "test-secret" };

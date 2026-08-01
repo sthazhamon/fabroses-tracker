@@ -142,14 +142,55 @@
       <div id="dash-content" class="muted">Loading...</div>
     </section>
 
+    <section class="panel" id="panel-customer-orders">
+      <h3>Customer Orders</h3>
+      <p class="muted">Log what a customer wants. The system checks stock, then checks work-in-progress, then triggers production if neither exists.</p>
+      <label>Customer name</label>
+      <input id="co-customer" placeholder="Customer name">
+      <label>Phone</label>
+      <input id="co-phone" placeholder="Optional">
+      <label>Order type</label>
+      <select id="co-type" onchange="toggleCoProductField()">
+        <option value="catalog">Existing catalog item</option>
+        <option value="custom">Fully custom (no catalog match)</option>
+      </select>
+      <div id="co-product-wrap">
+        <label>Catalog item code</label>
+        <div class="row"><input id="co-productid" placeholder="PRD-000001"><button type="button" class="secondary" style="margin-top:0;flex:0 0 90px;" onclick="openQuickScan('co-productid')">Scan</button></div>
+      </div>
+      <div id="co-desc-wrap" style="display:none;">
+        <label>Describe what they want</label>
+        <textarea id="co-desc" rows="2" placeholder="Custom blue silk saree with peacock zardozi..."></textarea>
+      </div>
+      <div class="row">
+        <div><label>Quantity</label><input id="co-qty" type="number" step="1" value="1"></div>
+        <div><label>Promised delivery date</label><input id="co-promised" type="date"></div>
+      </div>
+      <label>Notes</label>
+      <input id="co-notes" placeholder="Optional">
+      <button class="primary" onclick="createCustomerOrder()">Log order</button>
+      <div id="co-result"></div>
+      <div class="card">
+        <h4 style="margin-top:0;">All customer orders</h4>
+        <div id="co-list" class="muted">Loading...</div>
+      </div>
+      <div id="co-detail"></div>
+    </section>
+
     <section class="panel" id="panel-catalog">
       <h3>Product Catalog</h3>
       <label>Name</label>
       <input id="pc-name" placeholder="e.g. Kanjivaram Silk Saree - Maroon">
       <div class="row">
-        <div><label>Category</label><input id="pc-category" placeholder="Saree, Blouse, Kids wear..."></div>
-        <div><label>Color</label><input id="pc-color" placeholder="Maroon"></div>
+        <div><label>Category <button type="button" class="secondary" style="width:auto;padding:2px 8px;font-size:0.7rem;margin:0;" onclick="addMasterListEntry('category')">+ new</button></label><select id="pc-category"></select></div>
+        <div><label>Fabric <button type="button" class="secondary" style="width:auto;padding:2px 8px;font-size:0.7rem;margin:0;" onclick="addMasterListEntry('fabric')">+ new</button></label><select id="pc-fabric"></select></div>
       </div>
+      <div class="row">
+        <div><label>Work type <button type="button" class="secondary" style="width:auto;padding:2px 8px;font-size:0.7rem;margin:0;" onclick="addMasterListEntry('worktype')">+ new</button></label><select id="pc-worktype"></select></div>
+        <div><label>Pattern <button type="button" class="secondary" style="width:auto;padding:2px 8px;font-size:0.7rem;margin:0;" onclick="addMasterListEntry('pattern')">+ new</button></label><select id="pc-pattern"></select></div>
+      </div>
+      <label>Color</label>
+      <input id="pc-color" placeholder="Maroon">
       <div class="row">
         <div><label>Selling price (Rs)</label><input id="pc-price" type="number" step="0.01"></div>
         <div><label>Cost (Rs)</label><input id="pc-cost" type="number" step="0.01"></div>
@@ -273,8 +314,12 @@
 
     <section class="panel" id="panel-sales">
       <h3>Sales</h3>
-      <label>Work order code (optional, for custom pieces)</label>
-      <input id="s-wo" placeholder="WO-000045">
+      <label>Catalog item (leave blank for a custom/non-catalog sale)</label>
+      <div class="row"><input id="s-productid" placeholder="PRD-000001"><button type="button" class="secondary" style="margin-top:0;flex:0 0 90px;" onclick="fillFromCatalog()">Scan</button></div>
+      <div class="row">
+        <div><label>Quantity</label><input id="s-qty" type="number" step="1" value="1"></div>
+        <div><label>Work order code (optional)</label><input id="s-wo" placeholder="WO-000045"></div>
+      </div>
       <label>Description</label>
       <input id="s-desc" placeholder="Item description">
       <label>Customer name</label>
@@ -454,6 +499,7 @@ const API = "/api";
 
 const TABS = [
   { id: "dashboard", label: "Dashboard", roles: ["admin","accountant"] },
+  { id: "customer-orders", label: "Customer Orders", roles: ["admin","accountant","dispatch"] },
   { id: "catalog",   label: "Catalog",   roles: ["admin","accountant","worker","dispatch"] },
   { id: "floor",     label: "Floor Status", roles: ["admin","accountant","worker","dispatch"] },
   { id: "batch",     label: "Raw Material", roles: ["admin","accountant","worker","dispatch"] },
@@ -564,7 +610,8 @@ function boot() {
 function loadTabData(tabId) {
   try {
     if (tabId === "dashboard") loadDashboard();
-    if (tabId === "catalog") loadCatalogList();
+    if (tabId === "customer-orders") loadCustomerOrdersList();
+    if (tabId === "catalog") { loadCatalogList(); populateCatalogDropdowns(); }
     if (tabId === "floor") loadFloorStatus();
     if (tabId === "batch") loadBatchList();
     if (tabId === "order") loadOrderList();
@@ -728,11 +775,157 @@ async function loadOrderList() {
   } catch (e) { document.getElementById("order-list").textContent = e.message; }
 }
 
+// ---------------- Customer Orders ----------------
+function toggleCoProductField() {
+  const isCustom = document.getElementById("co-type").value === "custom";
+  document.getElementById("co-product-wrap").style.display = isCustom ? "none" : "block";
+  document.getElementById("co-desc-wrap").style.display = isCustom ? "block" : "none";
+}
+async function createCustomerOrder() {
+  try {
+    const customer_name = document.getElementById("co-customer").value.trim();
+    const customer_phone = document.getElementById("co-phone").value.trim();
+    const isCustom = document.getElementById("co-type").value === "custom";
+    const product_id = isCustom ? null : (document.getElementById("co-productid").value.trim().toUpperCase() || null);
+    const description = document.getElementById("co-desc").value.trim() || null;
+    const quantity = parseInt(document.getElementById("co-qty").value) || 1;
+    const promised_delivery_date = document.getElementById("co-promised").value || null;
+    const notes = document.getElementById("co-notes").value.trim();
+    if (!customer_name) { alert("Customer name is required"); return; }
+    if (!product_id && !description) { alert("Give either a catalog item code or a description"); return; }
+
+    const res = await apiFetch("/customer-orders", { method: "POST", headers: {"Content-Type":"application/json"},
+      body: JSON.stringify({customer_name: customer_name, customer_phone: customer_phone, product_id: product_id, description: description, quantity: quantity, promised_delivery_date: promised_delivery_date, notes: notes}) });
+
+    const statusLabels = {
+      stock_available: "In stock — ready to bill anytime.",
+      awaiting_wip: "Not in stock, but already being made (work order " + res.linked_work_order_id + ") — will auto-update once received.",
+      awaiting_material: "Not in stock, nothing in progress — a new work order (" + res.linked_work_order_id + ") was created. Go to Scan and issue raw material to a worker for it.",
+    };
+    document.getElementById("co-result").innerHTML =
+      '<div class="card"><div class="code-big">' + res.id + '</div><p>' + (statusLabels[res.status] || res.status) + '</p></div>';
+    document.getElementById("co-desc").value = "";
+    loadCustomerOrdersList();
+  } catch (e) { showError(e.message); }
+}
+async function loadCustomerOrdersList() {
+  try {
+    const list = await apiFetch("/customer-orders");
+    if (!list.length) { document.getElementById("co-list").innerHTML = "No customer orders yet."; return; }
+    const statusColors = { received:"var(--rose)", stock_available:"var(--ok)", awaiting_wip:"var(--warn)", awaiting_material:"var(--warn)", ready_to_bill:"var(--ok)", billed:"#555", shipped:"var(--ok)", cancelled:"#a33" };
+    const rows = list.map(function(o){
+      return '<tr><td>' + o.id + '</td><td>' + o.customer_name + '</td><td>' + (o.item_code || o.description || o.product_name || "") + ' x' + o.quantity + '</td>' +
+        '<td style="color:' + (statusColors[o.status]||"#555") + ';font-weight:600;">' + o.status.replace(/_/g," ") + '</td>' +
+        '<td><button class="secondary" style="width:auto;margin:0;padding:6px 8px;font-size:0.75rem;" onclick="viewCustomerOrder(\'' + o.id + '\')">View / Action</button></td></tr>';
+    }).join("");
+    document.getElementById("co-list").innerHTML = '<table><tr><th>Order</th><th>Customer</th><th>Item</th><th>Status</th><th></th></tr>' + rows + '</table>';
+  } catch (e) { document.getElementById("co-list").textContent = e.message; }
+}
+async function viewCustomerOrder(coId) {
+  try {
+    const o = await apiFetch("/customer-orders/" + coId);
+    let html = '<div class="card"><div class="code-big">' + o.id + '</div>' +
+      '<p><b>' + o.customer_name + '</b> ' + (o.customer_phone ? "(" + o.customer_phone + ")" : "") + '</p>' +
+      '<p>Item: ' + (o.item_code || o.description || o.product_name || "") + ' x' + o.quantity + '</p>' +
+      '<p>Status: <span class="stage-badge">' + o.status.replace(/_/g," ") + '</span></p>';
+
+    if (o.work_order) {
+      html += '<h4>Linked work order: ' + o.work_order.id + '</h4><p>Stage: <span class="stage-badge">' + o.work_order.stage + '</span> | Worker: ' + (o.work_order.worker_name||"-") + '</p>';
+    }
+    if (o.sale) {
+      html += '<h4>Billed</h4><p>Sale ' + o.sale.id + ' — Rs ' + o.sale.sale_price + '</p>';
+    }
+    if (o.status === "shipped") {
+      html += '<h4>Shipped</h4><p>' + (o.courier||"") + ' — ' + (o.tracking_id||"") + ' on ' + (o.dispatch_date||"") + '</p>';
+    }
+
+    if (["stock_available","ready_to_bill"].includes(o.status)) {
+      html += '<div class="card"><h4 style="margin-top:0;">Bill this order</h4>' +
+        '<label>Sale price (Rs)</label><input id="co-bill-price" type="number" step="0.01">' +
+        '<label>Amount received (Rs)</label><input id="co-bill-received" type="number" step="0.01">' +
+        '<button class="secondary" onclick="submitBillOrder(\'' + o.id + '\')">Bill order</button><div id="co-bill-msg"></div></div>';
+    }
+    if (o.status === "billed") {
+      html += '<div class="card"><h4 style="margin-top:0;">Ship this order</h4>' +
+        '<label>Courier</label><input id="co-ship-courier" placeholder="DTDC / Delhivery">' +
+        '<label>Tracking ID</label><input id="co-ship-tracking" placeholder="Tracking number">' +
+        '<button class="secondary" onclick="submitShipOrder(\'' + o.id + '\')">Mark shipped</button><div id="co-ship-msg"></div></div>';
+    }
+    if (!["billed","shipped","cancelled"].includes(o.status)) {
+      html += '<button class="secondary" style="color:#a33;border-color:#a33;" onclick="cancelCustomerOrder(\'' + o.id + '\')">Cancel order</button>';
+    }
+    html += '</div>';
+    document.getElementById("co-detail").innerHTML = html;
+  } catch (e) { showError(e.message); }
+}
+async function submitBillOrder(coId) {
+  try {
+    const sale_price = parseFloat(document.getElementById("co-bill-price").value);
+    const amount_received = parseFloat(document.getElementById("co-bill-received").value) || 0;
+    if (!sale_price) { alert("Sale price is required"); return; }
+    await apiFetch("/customer-orders/" + coId + "/bill", { method: "POST", headers: {"Content-Type":"application/json"},
+      body: JSON.stringify({sale_price: sale_price, amount_received: amount_received}) });
+    document.getElementById("co-bill-msg").innerHTML = '<p style="color:var(--ok);">Billed.</p>';
+    viewCustomerOrder(coId);
+    loadCustomerOrdersList();
+  } catch (e) { showError(e.message); }
+}
+async function submitShipOrder(coId) {
+  try {
+    const courier = document.getElementById("co-ship-courier").value.trim();
+    const tracking_id = document.getElementById("co-ship-tracking").value.trim();
+    await apiFetch("/customer-orders/" + coId + "/ship", { method: "POST", headers: {"Content-Type":"application/json"},
+      body: JSON.stringify({courier: courier, tracking_id: tracking_id}) });
+    document.getElementById("co-ship-msg").innerHTML = '<p style="color:var(--ok);">Shipped.</p>';
+    viewCustomerOrder(coId);
+    loadCustomerOrdersList();
+  } catch (e) { showError(e.message); }
+}
+async function cancelCustomerOrder(coId) {
+  if (!confirm("Cancel this order?")) return;
+  try {
+    await apiFetch("/customer-orders/" + coId, { method: "PATCH", headers: {"Content-Type":"application/json"}, body: JSON.stringify({status:"cancelled"}) });
+    viewCustomerOrder(coId);
+    loadCustomerOrdersList();
+  } catch (e) { showError(e.message); }
+}
 // ---------------- Catalog ----------------
+const MASTER_LIST_ENDPOINTS = {
+  category: { api: "/item-categories", select: "pc-category" },
+  fabric: { api: "/item-fabrics", select: "pc-fabric" },
+  worktype: { api: "/item-worktypes", select: "pc-worktype" },
+  pattern: { api: "/item-patterns", select: "pc-pattern" },
+};
+async function populateCatalogDropdowns() {
+  for (const key in MASTER_LIST_ENDPOINTS) {
+    const cfg = MASTER_LIST_ENDPOINTS[key];
+    try {
+      const list = await apiFetch(cfg.api);
+      const sel = document.getElementById(cfg.select);
+      const currentVal = sel.value;
+      sel.innerHTML = '<option value="">-- none --</option>' + list.map(function(item){ return '<option value="' + item.id + '">' + item.name + ' (' + item.code + ')</option>'; }).join("");
+      if (currentVal) sel.value = currentVal;
+    } catch (e) { /* non-fatal */ }
+  }
+}
+async function addMasterListEntry(type) {
+  const name = prompt("Name for this new " + type + ":");
+  if (!name) return;
+  const cfg = MASTER_LIST_ENDPOINTS[type];
+  try {
+    const res = await apiFetch(cfg.api, { method: "POST", headers: {"Content-Type":"application/json"}, body: JSON.stringify({name: name}) });
+    alert("Added with code: " + res.code);
+    await populateCatalogDropdowns();
+    document.getElementById(cfg.select).value = res.id;
+  } catch (e) { showError(e.message); }
+}
 async function createProduct() {
   try {
     const name = document.getElementById("pc-name").value.trim();
-    const category = document.getElementById("pc-category").value.trim();
+    const category_id = parseInt(document.getElementById("pc-category").value) || null;
+    const fabric_id = parseInt(document.getElementById("pc-fabric").value) || null;
+    const work_type_id = parseInt(document.getElementById("pc-worktype").value) || null;
+    const pattern_id = parseInt(document.getElementById("pc-pattern").value) || null;
     const color = document.getElementById("pc-color").value.trim();
     const price = parseFloat(document.getElementById("pc-price").value) || null;
     const cost = parseFloat(document.getElementById("pc-cost").value) || null;
@@ -742,15 +935,15 @@ async function createProduct() {
     if (!name) { alert("Name is required"); return; }
 
     const res = await apiFetch("/products", { method: "POST", headers: {"Content-Type":"application/json"},
-      body: JSON.stringify({name: name, category: category, color: color, price: price, cost: cost, stock_qty: stock_qty, description: description}) });
+      body: JSON.stringify({name: name, category_id: category_id, fabric_id: fabric_id, work_type_id: work_type_id, pattern_id: pattern_id,
+        color: color, price: price, cost: cost, stock_qty: stock_qty, description: description}) });
 
     if (photoFile) {
       const fd = new FormData(); fd.append("photo", photoFile);
       await apiFetch("/products/" + res.id + "/photo", { method: "POST", body: fd });
     }
-    document.getElementById("product-result").innerHTML = '<p style="color:var(--ok);">Added ' + res.id + ' to catalog.</p>';
+    document.getElementById("product-result").innerHTML = '<p style="color:var(--ok);">Added ' + res.id + (res.item_code ? ' — part number: <b>' + res.item_code + '</b>' : ' (no part number — pick all four categories above to generate one)') + '</p>';
     document.getElementById("pc-name").value = "";
-    document.getElementById("pc-category").value = "";
     document.getElementById("pc-color").value = "";
     document.getElementById("pc-price").value = "";
     document.getElementById("pc-cost").value = "";
@@ -770,26 +963,44 @@ async function loadCatalogList() {
         '<p class="pc-meta">' + (p.category||"") + (p.color ? " - " + p.color : "") + '</p>' +
         '<p class="pc-meta">Rs ' + (p.price||"-") + ' | Stock: ' + p.stock_qty + '</p>' +
         '<p class="pc-meta" style="color:var(--rose-dark);font-weight:600;">' + p.id + '</p>' +
-        '<button class="secondary" style="padding:6px 8px;font-size:0.75rem;margin-top:6px;" onclick="viewProductCost(\'' + p.id + '\')">View cost</button></div></div>';
+        '<button class="secondary" style="padding:6px 8px;font-size:0.75rem;margin-top:6px;" onclick="viewProductCost(\'' + p.id + '\')">View cost</button>' +
+        '<button class="secondary" style="padding:6px 8px;font-size:0.75rem;margin-top:4px;" onclick="promptAdjustStock(\'' + p.id + '\',\'' + p.name.replace(/'/g,"") + '\')">Adjust stock</button></div></div>';
     }).join("");
     document.getElementById("catalog-list").innerHTML = '<div class="product-grid">' + cards + '</div><div id="cost-detail"></div>';
   } catch (e) { document.getElementById("catalog-list").textContent = e.message; }
 }
+async function promptAdjustStock(productId, productName) {
+  const deltaStr = prompt("Adjust stock for " + productName + " (positive to add, negative to remove — e.g. 5 or -2):");
+  if (deltaStr === null) return;
+  const delta = parseInt(deltaStr);
+  if (!delta) { alert("Enter a non-zero number"); return; }
+  const reason = prompt("Reason (optional, e.g. 'existing stock from before this system', 'damaged'):") || "";
+  try {
+    const res = await apiFetch("/products/" + productId + "/adjust-stock", { method: "POST", headers: {"Content-Type":"application/json"},
+      body: JSON.stringify({delta: delta, reason: reason}) });
+    alert("Stock updated. New total: " + res.new_stock_qty);
+    loadCatalogList();
+  } catch (e) { showError(e.message); }
+}
 async function viewProductCost(productId) {
   try {
     const c = await apiFetch("/products/" + productId + "/cost");
+    const sourceNote = c.cost_source === "manual" ? "Cost entered manually (no work-order history for this item)."
+      : c.cost_source === "none" ? "No cost recorded yet — enter one via Adjust stock or edit the product."
+      : "Cost traced from actual raw material and labor used.";
     const rows = c.work_orders.map(function(wo){
       const mats = wo.materials.map(function(m){ return m.material_name + ": " + m.metres_issued + "m @ Rs" + m.cost_per_metre + "/m = Rs" + m.line_cost; }).join("<br>");
       return '<tr><td>' + wo.work_order_id + '</td><td>' + wo.received_qty + '</td><td>Rs ' + wo.raw_material_cost + '</td><td>Rs ' + wo.labor_cost + '</td><td>' + mats + '</td></tr>';
     }).join("");
     document.getElementById("cost-detail").innerHTML =
       '<div class="card"><h4 style="margin-top:0;">' + c.product_name + ' — cost breakdown</h4>' +
+      '<p class="muted">' + sourceNote + '</p>' +
       '<div class="kpi-grid">' +
-        '<div class="kpi"><div class="num">Rs ' + c.cost_per_unit + '</div><div class="lbl">Cost per unit</div></div>' +
-        '<div class="kpi"><div class="num">Rs ' + (c.margin_per_unit != null ? c.margin_per_unit : "-") + '</div><div class="lbl">Margin per unit</div></div>' +
+        '<div class="kpi"><div class="num">' + (c.cost_per_unit != null ? "Rs " + c.cost_per_unit : "-") + '</div><div class="lbl">Cost per unit</div></div>' +
+        '<div class="kpi"><div class="num">' + (c.margin_per_unit != null ? "Rs " + c.margin_per_unit : "-") + '</div><div class="lbl">Margin per unit</div></div>' +
       '</div>' +
-      '<p class="muted">Total raw material: Rs ' + c.total_raw_material_cost + ' | Total labor: Rs ' + c.total_labor_cost + ' | Units produced: ' + c.total_units_produced + '</p>' +
-      (c.work_orders.length ? '<table><tr><th>Work order</th><th>Qty</th><th>Raw cost</th><th>Labor</th><th>Materials used</th></tr>' + rows + '</table>' : '<p class="muted">No work orders have been received into this SKU yet — cost shown may be from manual entry only.</p>') +
+      (c.cost_source === "work_orders" ? '<p class="muted">Total raw material: Rs ' + c.total_raw_material_cost + ' | Total labor: Rs ' + c.total_labor_cost + ' | Units produced: ' + c.total_units_produced + '</p>' : '') +
+      (c.work_orders.length ? '<table><tr><th>Work order</th><th>Qty</th><th>Raw cost</th><th>Labor</th><th>Materials used</th></tr>' + rows + '</table>' : '') +
       '</div>';
   } catch (e) { showError(e.message); }
 }
@@ -902,16 +1113,22 @@ async function loadFloorStatus() {
   try {
     const d = await apiFetch("/inventory-status");
     const storeRows = d.storeRaw.map(function(b){ return '<tr><td>' + b.id + '</td><td>' + (b.material_name||"") + '</td><td>' + b.metres_balance + ' m</td></tr>'; }).join("");
-    const workerRows = d.withWorkers.map(function(w){ return '<tr><td>' + w.worker_name + '</td><td>' + (w.material_name||"") + '</td><td>' + w.metres_issued + ' m</td><td>' + w.work_order_id + '</td></tr>'; }).join("");
+    const workerRows = d.withWorkers.map(function(w){ return '<tr><td>' + w.worker_name + '</td><td>' + (w.material_name||"") + '</td><td>' + w.metres_issued + ' m</td><td>' + w.work_order_id + ' - ' + (w.order_description||"") + '</td>' +
+      '<td><button class="secondary" style="width:auto;margin:0;padding:6px 10px;font-size:0.75rem;" onclick="jumpToOrder(\'' + w.work_order_id + '\')">Open</button></td></tr>'; }).join("");
     const stockRows = d.finishedStock.map(function(p){ return '<tr><td>' + p.id + '</td><td>' + p.name + '</td><td>' + p.stock_qty + '</td></tr>'; }).join("");
     document.getElementById("floor-content").innerHTML =
       '<h4>At the store (raw material)</h4>' +
       (d.storeRaw.length ? '<table><tr><th>Batch</th><th>Material</th><th>Balance</th></tr>' + storeRows + '</table>' : '<p class="muted">Nothing in stock.</p>') +
-      '<h4>Currently with workers</h4>' +
-      (d.withWorkers.length ? '<table><tr><th>Worker</th><th>Material</th><th>Metres</th><th>Work order</th></tr>' + workerRows + '</table>' : '<p class="muted">Nothing checked out right now — all material is at the store.</p>') +
+      '<h4>Currently with workers <span class="muted">(tap Open to receive the finished piece back)</span></h4>' +
+      (d.withWorkers.length ? '<table><tr><th>Worker</th><th>Material</th><th>Metres</th><th>Order</th><th></th></tr>' + workerRows + '</table>' : '<p class="muted">Nothing checked out right now — all material is at the store.</p>') +
       '<h4>Finished goods stock</h4>' +
       (d.finishedStock.length ? '<table><tr><th>Code</th><th>Name</th><th>Stock</th></tr>' + stockRows + '</table>' : '<p class="muted">No finished stock recorded yet.</p>');
   } catch (e) { document.getElementById("floor-content").textContent = e.message; }
+}
+function jumpToOrder(woId) {
+  switchTab("scan");
+  document.getElementById("manual-code").value = woId;
+  lookup(woId);
 }
 async function submitPayment() {
   try {
@@ -1127,6 +1344,8 @@ async function loadDispatchList() {
 
 async function submitSale() {
   try {
+    const product_id = document.getElementById("s-productid").value.trim().toUpperCase() || null;
+    const quantity = parseInt(document.getElementById("s-qty").value) || 1;
     const work_order_id = document.getElementById("s-wo").value.trim().toUpperCase() || null;
     const description = document.getElementById("s-desc").value.trim();
     const customer_name = document.getElementById("s-customer").value.trim();
@@ -1135,15 +1354,30 @@ async function submitSale() {
     const amount_received = parseFloat(document.getElementById("s-received").value) || 0;
     const sale_date = document.getElementById("s-date").value || null;
     const res = await apiFetch("/sales", { method: "POST", headers: {"Content-Type":"application/json"},
-      body: JSON.stringify({work_order_id: work_order_id, description: description, customer_name: customer_name, reseller_name: reseller_name, sale_price: sale_price, amount_received: amount_received, sale_date: sale_date, received_by: getSession().name}) });
+      body: JSON.stringify({product_id: product_id, quantity: quantity, work_order_id: work_order_id, description: description, customer_name: customer_name, reseller_name: reseller_name, sale_price: sale_price, amount_received: amount_received, sale_date: sale_date, received_by: getSession().name}) });
     document.getElementById("sale-msg").innerHTML = '<p style="color:var(--ok);">Recorded as ' + res.id + '</p>';
     loadSalesList();
   } catch (e) { showError(e.message); }
 }
+async function fillFromCatalog() {
+  openQuickScan("s-productid");
+  // give the scan a moment to populate the field, then try to auto-fill description/price
+  setTimeout(async function () {
+    const code = document.getElementById("s-productid").value.trim().toUpperCase();
+    if (!code) return;
+    try {
+      const p = await apiFetch("/products/" + code);
+      if (p && !p.error) {
+        if (!document.getElementById("s-desc").value) document.getElementById("s-desc").value = p.name;
+        if (!document.getElementById("s-price").value && p.price) document.getElementById("s-price").value = p.price;
+      }
+    } catch (e) { /* non-fatal — user can still fill manually */ }
+  }, 1200);
+}
 async function loadSalesList() {
   try {
     const list = await apiFetch("/sales");
-    const rows = list.slice(0, 15).map(function(s){ return '<tr><td>' + s.id + '</td><td>' + s.description + '</td><td>Rs ' + s.sale_price + '</td><td>' + (s.sale_date||"") + '</td>' +
+    const rows = list.slice(0, 15).map(function(s){ return '<tr><td>' + s.id + '</td><td>' + s.description + (s.product_id ? '<br><span class="muted">' + s.product_id + ' x' + s.quantity + '</span>' : '') + '</td><td>Rs ' + s.sale_price + '</td><td>' + (s.sale_date||"") + '</td>' +
       '<td><button class="secondary" style="width:auto;margin:2px;padding:6px 8px;font-size:0.75rem;" onclick=\'editSale(' + JSON.stringify(s) + ')\'>Edit</button>' +
       '<button class="secondary" style="width:auto;margin:2px;padding:6px 8px;font-size:0.75rem;" onclick=\'printInvoice(' + JSON.stringify(s) + ')\'>Print</button></td></tr>'; }).join("");
     document.getElementById("sales-list").innerHTML = list.length
@@ -1157,9 +1391,14 @@ async function editSale(sale) {
   if (newReceived === null) return;
   const newDesc = prompt("Description:", sale.description);
   if (newDesc === null) return;
+  const changes = {sale_price: parseFloat(newPrice), amount_received: parseFloat(newReceived), description: newDesc};
+  if (sale.product_id) {
+    const newQty = prompt("Quantity (catalog item " + sale.product_id + "):", sale.quantity || 1);
+    if (newQty === null) return;
+    changes.quantity = parseInt(newQty);
+  }
   try {
-    await apiFetch("/sales/" + sale.id, { method: "PATCH", headers: {"Content-Type":"application/json"},
-      body: JSON.stringify({sale_price: parseFloat(newPrice), amount_received: parseFloat(newReceived), description: newDesc}) });
+    await apiFetch("/sales/" + sale.id, { method: "PATCH", headers: {"Content-Type":"application/json"}, body: JSON.stringify(changes) });
     loadSalesList();
   } catch (e) { showError(e.message); }
 }

@@ -33,7 +33,7 @@ P&L. Runs entirely on Cloudflare's free/near-free tier.
    ```
    Copy the printed `database_id` into `wrangler.toml`.
 
-3. **Load all six schema files, in this exact order:**
+3. **Load all eight schema files, in this exact order:**
    ```
    wrangler d1 execute fabroses-db --file=./schema.sql --remote
    wrangler d1 execute fabroses-db --file=./schema_v2.sql --remote
@@ -41,11 +41,17 @@ P&L. Runs entirely on Cloudflare's free/near-free tier.
    wrangler d1 execute fabroses-db --file=./schema_v4.sql --remote
    wrangler d1 execute fabroses-db --file=./schema_v5.sql --remote
    wrangler d1 execute fabroses-db --file=./schema_v6.sql --remote
+   wrangler d1 execute fabroses-db --file=./schema_v7.sql --remote
+   wrangler d1 execute fabroses-db --file=./schema_v8.sql --remote
    ```
-   `schema_v5.sql` adds the party master, the issue-to-worker /
-   receive-finished-good job-work workflow, and the traceability log.
-   `schema_v6.sql` adds purchase orders, the edit audit log, and richer work
-   order fields. Safe to run on a database that already has data.
+   If you've already run some of these on a previous deployment, only run the
+   ones you haven't — each is safe to run once, but re-running one that's
+   already applied will error (harmlessly — just skip it and move to the
+   next). If you're not sure which ones you've run, check with:
+   ```
+   wrangler d1 execute fabroses-db --remote --command="SELECT name FROM sqlite_master WHERE type='table' ORDER BY name"
+   ```
+   and compare against what each schema file creates.
 
 4. **Create the R2 bucket:**
    ```
@@ -182,6 +188,106 @@ Sessions last 12 hours, then it asks for the PIN again.
   same design into the *same* existing catalog code later, its cost rolls
   into the same average.
 
+## How an item's identity changes as it moves through the system
+
+This trips people up, so it's worth being explicit: the *code* changes at
+each stage, but the *lineage* never breaks.
+
+- **`RM-xxxxx`** — a batch of raw material. Represents a lot, not a single
+  item; one batch can feed many pieces.
+- **`WO-xxxxx`** — a job. Represents the work being done, with which worker
+  and which material.
+- **`PRD-xxxxx`** — the catalog SKU. Represents a style/design. Multiple
+  physical pieces (even from different work orders) can share one PRD code
+  and just add to its stock count — that's normal retail thinking, not a
+  limitation.
+
+Every PRD traces back to the exact work order(s) that made it, and every
+work order traces back to the exact raw material batch(es) it drew from —
+that's what **View cost** on a catalog item is actually showing you.
+
+**Selling a catalog item now actually decrements its stock** (this was
+missing before — recording a sale used to leave inventory untouched). In
+the Sales tab, scan or type a catalog code and its price/name auto-fill;
+leave it blank for a custom or non-catalog sale, which still works exactly
+as before.
+
+## Entering existing stock that has no raw-material or work-order history
+
+Two ways, both fine:
+
+- **At creation** — Catalog tab → "Add to catalog" → just set **Stock on
+  hand** directly. No work order needed. If you know roughly what it cost
+  you, fill in the **Cost** field too — it'll show up honestly in "View
+  cost" as manually-entered, rather than being ignored.
+- **Later, on an existing item** — each catalog card has an **Adjust stock**
+  button. Use a positive number to add (e.g. found more old stock, or
+  received extra outside the system) or negative to remove (damaged,
+  written off). Every adjustment is permanently logged with a reason.
+
+"View cost" is honest about where its numbers came from — it says whether a
+figure is traced from actual work orders, manually entered, or simply not
+recorded yet (rather than ever silently reporting a cost of zero, which
+would make margin look artificially better than it is).
+
+## Part numbering
+
+Four small, store-managed lists — **Category, Fabric, Work type, Pattern** —
+each entry with a 3-character code you control (auto-suggested from the
+name, editable before you confirm). Pick all four when adding a catalog
+item and the system builds the full part number itself:
+
+```
+FR-CTW-KTA-APL-FLR-0001
+   |    |    |    |    └─ sequence, restarts per unique combination
+   |    |    |    └────── pattern (Floral)
+   |    |    └─────────── work type (Applique)
+   |    └──────────────── fabric (Kota)
+   └───────────────────── category (Cutwork)
+```
+
+Add a new fabric, pattern, etc. anytime with the **+ new** button right next
+to each dropdown — never blocked waiting for a fixed list to be updated.
+Seeded from your actual site's categories and fabrics as a starting point.
+
+This is entirely optional — a product created without picking all four
+simply has no part number, and everything else about it works normally.
+
+## Customer order intake and fulfillment
+
+**Customer Orders** is a new tab, separate from both Sales (money collected)
+and Work Orders (production) — it's what a customer *wants*, logged the
+moment they ask, before it's necessarily in stock or even started.
+
+The moment you log one against a catalog item, the system checks, in order:
+1. **Enough in stock right now?** → marked `stock_available`, bill it
+   whenever.
+2. **Not enough, but something's already being made for this exact item?**
+   → attaches to that existing work order (`awaiting_wip`) instead of
+   starting a redundant second one.
+3. **Neither?** → creates a brand new work order automatically
+   (`awaiting_material`) — go to **Scan**, issue raw material to a worker
+   for it, same as any other job.
+
+**When that work order's finished good is received back into stock**, any
+customer order waiting on it flips to `ready_to_bill` on its own — no manual
+step. From there: **Bill** (creates the actual sale, re-checking stock at
+that exact moment so two orders can't both claim the last piece) → **Ship**
+(adds courier + tracking, closes the order).
+
+A fully custom order with no catalog match skips the stock/WIP checks
+entirely and goes straight to production.
+
+**A deliberate design choice worth knowing about:** production stages
+(Order Placed → Cutting → Handwork → ... → Delivered) stay on the work
+order, worker-facing. The customer order gets its own, coarser status
+(received → stock_available/awaiting_wip/awaiting_material → ready_to_bill
+→ billed → shipped) — store-facing. The Customer Order detail view shows
+both together. This is split into two fields on purpose rather than forced
+into one long combined list, since a work order and a customer order aren't
+always 1:1 (one work order can eventually satisfy several customer orders
+placed against the same design over time).
+
 ## Testing this yourself before you trust it with real data
 
 The `test/` folder has real system test suites — they import the actual
@@ -193,14 +299,18 @@ account needed. Run all three any time you or I change the code:
 node test/system-test.mjs
 node test/system-test-part2.mjs
 node test/system-test-part3.mjs
+node test/system-test-part4.mjs
+node test/system-test-part5.mjs
 ```
 
-Together they're 111 checks covering the full job-work cycle, purchase
-orders, editing records with audit trail, the two explicit corner cases
-(one order fed by multiple material batches, one batch feeding multiple
-orders), per-SKU cost roll-up math, every endpoint's happy path and its
-error cases, login lockout, and live session revocation. If any of them
-ever print a FAIL line, don't deploy that change until it's resolved.
+Together they're 163 checks covering the full job-work cycle, purchase
+orders, editing records with audit trail, part-numbering generation, the
+full customer-order fulfillment cascade (all three branches: stock / WIP /
+raw-material-trigger), auto-attach on receipt, billing with a live stock
+re-check, shipping, cancellation rules, the sale-to-stock link, every
+endpoint's happy path and its error cases, login lockout, and live session
+revocation. If any of them ever print a FAIL line, don't deploy that change
+until it's resolved.
 
 ## Installing it as an app on a phone
 

@@ -6,6 +6,28 @@ export async function onRequestGet({ params, env }) {
     "SELECT * FROM work_orders WHERE output_product_id = ?"
   ).bind(params.id).all();
 
+  if (!workOrders.length) {
+    // No job-work history to trace for this item — it was either entered as
+    // existing/opening stock, or its stock was adjusted directly. Fall back to
+    // whatever cost was manually entered on the product itself, rather than
+    // silently reporting a cost of zero (which would make margin look like
+    // 100% profit on stock that actually has a real, known cost).
+    const costPerUnit = product.cost != null ? product.cost : null;
+    return Response.json({
+      product_id: product.id,
+      product_name: product.name,
+      cost_source: product.cost != null ? "manual" : "none",
+      total_raw_material_cost: 0,
+      total_labor_cost: 0,
+      total_cost: costPerUnit != null ? Math.round(costPerUnit * product.stock_qty * 100) / 100 : null,
+      total_units_produced: 0,
+      cost_per_unit: costPerUnit,
+      selling_price: product.price,
+      margin_per_unit: (product.price != null && costPerUnit != null) ? Math.round((product.price - costPerUnit) * 100) / 100 : null,
+      work_orders: [],
+    });
+  }
+
   const breakdown = [];
   let totalRawCost = 0;
   let totalLaborCost = 0;
@@ -57,6 +79,7 @@ export async function onRequestGet({ params, env }) {
   return Response.json({
     product_id: product.id,
     product_name: product.name,
+    cost_source: "work_orders",
     total_raw_material_cost: Math.round(totalRawCost * 100) / 100,
     total_labor_cost: Math.round(totalLaborCost * 100) / 100,
     total_cost: totalCost,

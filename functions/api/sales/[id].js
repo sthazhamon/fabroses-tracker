@@ -5,12 +5,40 @@ export async function onRequestPatch({ request, env, params, data }) {
   const existing = await env.DB.prepare("SELECT * FROM sales WHERE id = ?").bind(params.id).first();
   if (!existing) return Response.json({ error: "Sale not found" }, { status: 404 });
 
-  const editable = ["description", "customer_name", "reseller_name", "sale_price", "amount_received", "sale_date"];
+  const editable = ["description", "customer_name", "reseller_name", "sale_price", "amount_received", "sale_date", "product_id", "quantity"];
   const changes = {};
   for (const field of editable) {
     if (body[field] !== undefined) changes[field] = body[field];
   }
   if (!Object.keys(changes).length) return Response.json({ error: "Nothing to update" }, { status: 400 });
+
+  // If the linked catalog item or quantity is changing, stock has to move too —
+  // give back what the OLD sale had reserved, then take the NEW amount, so
+  // stock never drifts out of sync with what's actually been sold.
+  const productOrQtyChanging = changes.product_id !== undefined || changes.quantity !== undefined;
+  if (productOrQtyChanging) {
+    if (existing.product_id) {
+      await env.DB.prepare("UPDATE products SET stock_qty = stock_qty + ? WHERE id = ?").bind(existing.quantity || 1, existing.product_id).run();
+    }
+    const newProductId = changes.product_id !== undefined ? changes.product_id : existing.product_id;
+    const newQty = changes.quantity !== undefined ? changes.quantity : (existing.quantity || 1);
+    if (newProductId) {
+      const product = await env.DB.prepare("SELECT * FROM products WHERE id = ?").bind(newProductId).first();
+      if (!product) {
+        if (existing.product_id) {
+          await env.DB.prepare("UPDATE products SET stock_qty = stock_qty - ? WHERE id = ?").bind(existing.quantity || 1, existing.product_id).run();
+        }
+        return Response.json({ error: "That product code doesn't exist in the catalog" }, { status: 404 });
+      }
+      if (product.stock_qty < newQty) {
+        if (existing.product_id) {
+          await env.DB.prepare("UPDATE products SET stock_qty = stock_qty - ? WHERE id = ?").bind(existing.quantity || 1, existing.product_id).run();
+        }
+        return Response.json({ error: `Only ${product.stock_qty} unit(s) of ${product.name} in stock` }, { status: 400 });
+      }
+      await env.DB.prepare("UPDATE products SET stock_qty = stock_qty - ? WHERE id = ?").bind(newQty, newProductId).run();
+    }
+  }
 
   await logEdits(env, "sale", params.id, existing, changes, data.user?.name);
 
