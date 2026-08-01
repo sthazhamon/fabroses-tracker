@@ -1,4 +1,4 @@
-const CACHE_NAME = "fabroses-shell-v1";
+const CACHE_NAME = "fabroses-shell-v2";
 const SHELL_ASSETS = [
   "/",
   "/index.html",
@@ -36,14 +36,16 @@ self.addEventListener("fetch", (event) => {
     return;
   }
 
+  // Network-first: this app changes frequently, so every load that has a
+  // connection should get the current code. The cache exists purely as a
+  // fallback for when there's genuinely no connection — not as the default
+  // source, which would mean updates never reach anyone who already opened
+  // the app once.
   event.respondWith(
-    caches.match(event.request).then((cached) => {
-      if (cached) return cached;
-      return fetch(event.request).then((response) => {
-        const copy = response.clone();
-        caches.open(CACHE_NAME).then((cache) => cache.put(event.request, copy));
-        return response;
-      }).catch(() => cached);
-    })
+    fetch(event.request).then((response) => {
+      const copy = response.clone();
+      caches.open(CACHE_NAME).then((cache) => cache.put(event.request, copy));
+      return response;
+    }).catch(() => caches.match(event.request))
   );
 });
